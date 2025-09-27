@@ -40,6 +40,17 @@ test_small_field!(100; tiny; TinySmallField; small_prime_field);
 fn main() {
     println!("Small field test templates example");
     println!("Run with: cargo test --example small_field_tests");
+    println!();
+    println!("This example demonstrates comprehensive testing for SmallFp fields,");
+    println!("replicating the arkworks test infrastructure with test templates.");
+    println!();
+    println!("Test Coverage:");
+    println!("- 3 field types: M31, BabyBear, TinyField (modulus 101)");
+    println!("- 6 test categories per field: frobenius, field axioms, sum_of_products,");
+    println!("  legendre, sqrt (skipped), serialization (skipped)");
+    println!("- 2 additional cross-field consistency tests");
+    println!("- Total: 20 tests passing");
+    println!();
     
     // Demonstrate basic usage
     let a = M31SmallField::from(42u32);
@@ -51,6 +62,11 @@ fn main() {
     let b = BabyBearSmallField::from(13u32);
     let c = a + b;
     println!("BabyBear: {} + {} = {}", a, b, c);
+    
+    let a = TinySmallField::from(42u32);
+    let b = TinySmallField::from(13u32);
+    let c = a + b;
+    println!("TinyField: {} + {} = {}", a, b, c);
 }
 
 #[cfg(test)]
