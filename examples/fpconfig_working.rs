@@ -728,4 +728,64 @@ mod tests {
         SmallFieldMont::exit(&mut result);
         assert_eq!(result.value, 33 % SmallFieldMont::MODULUS);
     }
+
+    // ---------- Square root tests ----------
+    #[test]
+    fn test_sqrt_standard_backend() {
+        use ark_ff::Field;
+        
+        // Test perfect square: 4
+        let a = SmallField::new(4);
+        let sqrt = a.sqrt();
+        assert!(sqrt.is_some());
+        let sqrt_val = sqrt.unwrap();
+        let mut sqrt_squared = sqrt_val;
+        SmallField::square_in_place(&mut sqrt_squared);
+        assert_eq!(sqrt_squared.value, 4);
+
+        // Test sqrt of 1
+        let one = SmallField::ONE;
+        let sqrt_one = one.sqrt();
+        assert!(sqrt_one.is_some());
+        assert_eq!(sqrt_one.unwrap(), SmallField::ONE);
+
+        // Test sqrt of 0
+        let zero = SmallField::ZERO;
+        let sqrt_zero = zero.sqrt();
+        assert!(sqrt_zero.is_some());
+        assert_eq!(sqrt_zero.unwrap(), SmallField::ZERO);
+    }
+
+    #[test]
+    fn test_sqrt_montgomery_backend() {
+        use ark_ff::Field;
+        
+        // Test perfect square: 4
+        let a = SmallFieldMont::new(4);
+        let sqrt = a.sqrt();
+        assert!(sqrt.is_some());
+        let sqrt_val = sqrt.unwrap();
+        let mut sqrt_squared = sqrt_val;
+        SmallFieldMont::square_in_place(&mut sqrt_squared);
+        let mut a_copy = a;
+        SmallFieldMont::exit(&mut sqrt_squared);
+        SmallFieldMont::exit(&mut a_copy);
+        assert_eq!(sqrt_squared.value, a_copy.value);
+
+        // Test sqrt of 1
+        let one = SmallFieldMont::ONE;
+        let sqrt_one = one.sqrt();
+        assert!(sqrt_one.is_some());
+        let mut sqrt_one_val = sqrt_one.unwrap();
+        SmallFieldMont::exit(&mut sqrt_one_val);
+        assert_eq!(sqrt_one_val.value, 1);
+
+        // Test sqrt of 0
+        let zero = SmallFieldMont::ZERO;
+        let sqrt_zero = zero.sqrt();
+        assert!(sqrt_zero.is_some());
+        let mut sqrt_zero_val = sqrt_zero.unwrap();
+        SmallFieldMont::exit(&mut sqrt_zero_val);
+        assert_eq!(sqrt_zero_val.value, 0);
+    }
 }

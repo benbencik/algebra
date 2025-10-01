@@ -123,3 +123,45 @@ pub(crate) fn generate_montgomery_bigint_casts(
         },
     )
 }
+
+// Helper function to generate SQRT precomputation for SmallFp
+pub(crate) fn generate_sqrt_precomputation(
+    modulus: u128,
+    two_adicity: u32,
+    two_adic_root: u128,
+) -> proc_macro2::TokenStream {
+    // Check if modulus is 3 mod 4
+    if modulus % 4 == 3 {
+        // Case3Mod4: (modulus + 1) / 4
+        let modulus_plus_one_div_four = (modulus + 1) / 4;
+        let lo = modulus_plus_one_div_four as u64;
+        let hi = (modulus_plus_one_div_four >> 64) as u64;
+        
+        quote! {
+            const SQRT_PRECOMP: Option<SqrtPrecomputation<SmallFp<Self>>> = {
+                const MODULUS_PLUS_ONE_DIV_FOUR: [u64; 2] = [#lo, #hi];
+                Some(SqrtPrecomputation::Case3Mod4 {
+                    modulus_plus_one_div_four: &MODULUS_PLUS_ONE_DIV_FOUR,
+                })
+            };
+        }
+    } else {
+        // TonelliShanks: Use two_adicity and two_adic_root
+        // Compute trace_minus_one_div_two: (modulus - 1) / 2^two_adicity / 2
+        let trace = (modulus - 1) >> two_adicity;
+        let trace_minus_one_div_two = trace / 2;
+        let lo = trace_minus_one_div_two as u64;
+        let hi = (trace_minus_one_div_two >> 64) as u64;
+        
+        quote! {
+            const SQRT_PRECOMP: Option<SqrtPrecomputation<SmallFp<Self>>> = {
+                const TRACE_MINUS_ONE_DIV_TWO: [u64; 2] = [#lo, #hi];
+                Some(SqrtPrecomputation::TonelliShanks {
+                    two_adicity: #two_adicity,
+                    quadratic_nonresidue_to_trace: Self::TWO_ADIC_ROOT_OF_UNITY,
+                    trace_of_modulus_minus_one_div_two: &TRACE_MINUS_ONE_DIV_TWO,
+                })
+            };
+        }
+    }
+}
