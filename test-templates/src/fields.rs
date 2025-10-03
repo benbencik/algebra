@@ -244,10 +244,16 @@ macro_rules! __test_field {
                 assert_eq!(zero * b, zero, "Mul by zero failed");
                 assert_eq!(zero * c, zero, "Mul by zero failed");
 
-                // Inverses
-                assert_eq!(a * a.inverse().unwrap(), one, "Mul by inverse failed");
-                assert_eq!(b * b.inverse().unwrap(), one, "Mul by inverse failed");
-                assert_eq!(c * c.inverse().unwrap(), one, "Mul by inverse failed");
+                // Inverses - skip if value is zero (for small fields this can happen)
+                if !a.is_zero() {
+                    assert_eq!(a * a.inverse().unwrap(), one, "Mul by inverse failed");
+                }
+                if !b.is_zero() {
+                    assert_eq!(b * b.inverse().unwrap(), one, "Mul by inverse failed");
+                }
+                if !c.is_zero() {
+                    assert_eq!(c * c.inverse().unwrap(), one, "Mul by inverse failed");
+                }
 
                 // Associativity and commutativity simultaneously
                 let t0 = (a * b) * c;
@@ -737,10 +743,16 @@ macro_rules! __test_small_field {
                 assert_eq!(zero * b, zero, "Mul by zero failed");
                 assert_eq!(zero * c, zero, "Mul by zero failed");
 
-                // Inverses
-                assert_eq!(a * a.inverse().unwrap(), one, "Mul by inverse failed");
-                assert_eq!(b * b.inverse().unwrap(), one, "Mul by inverse failed");
-                assert_eq!(c * c.inverse().unwrap(), one, "Mul by inverse failed");
+                // Inverses - skip if value is zero (for small fields this can happen)
+                if !a.is_zero() {
+                    assert_eq!(a * a.inverse().unwrap(), one, "Mul by inverse failed");
+                }
+                if !b.is_zero() {
+                    assert_eq!(b * b.inverse().unwrap(), one, "Mul by inverse failed");
+                }
+                if !c.is_zero() {
+                    assert_eq!(c * c.inverse().unwrap(), one, "Mul by inverse failed");
+                }
 
                 // Associativity and commutativity simultaneously
                 let t0 = (a * b) * c;
@@ -838,31 +850,31 @@ macro_rules! __test_small_field {
         }
 
         // #[test]
-        // fn test_sqrt() {
-        //     if <$field>::SQRT_PRECOMP.is_some() {
-        //         use ark_std::UniformRand;
-        //         let rng = &mut test_rng();
+        fn test_sqrt() {
+            if <$field>::SQRT_PRECOMP.is_some() {
+                use ark_std::UniformRand;
+                let rng = &mut test_rng();
 
-        //         assert!(<$field>::zero().sqrt().unwrap().is_zero());
+                assert!(<$field>::zero().sqrt().unwrap().is_zero());
 
-        //         for _ in 0..ITERATIONS {
-        //             // Ensure sqrt(a^2) = a or -a
-        //             let a = <$field>::rand(rng);
-        //             let b = a.square();
-        //             let sqrt = b.sqrt().unwrap();
-        //             assert!(a == sqrt || -a == sqrt);
+                for _ in 0..ITERATIONS {
+                    // Ensure sqrt(a^2) = a or -a
+                    let a = <$field>::rand(rng);
+                    let b = a.square();
+                    let sqrt = b.sqrt().unwrap();
+                    assert!(a == sqrt || -a == sqrt);
 
-        //             if let Some(mut b) = a.sqrt() {
-        //                 b.square_in_place();
-        //                 assert_eq!(a, b);
-        //             }
+                    if let Some(mut b) = a.sqrt() {
+                        b.square_in_place();
+                        assert_eq!(a, b);
+                    }
 
-        //             let a = <$field>::rand(rng);
-        //             let b = a.square();
-        //             assert_eq!(b.legendre(), LegendreSymbol::QuadraticResidue);
-        //         }
-        //     }
-        // }
+                    let a = <$field>::rand(rng);
+                    let b = a.square();
+                    assert_eq!(b.legendre(), LegendreSymbol::QuadraticResidue);
+                }
+            }
+        }
 
         #[test]
         fn test_mul_by_base_field_elem() {

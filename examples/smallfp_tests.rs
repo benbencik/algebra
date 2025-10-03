@@ -65,6 +65,7 @@ pub type SmallF64Mont = SmallFp<SmallF64ConfigMont>;
 pub struct SmallF128Config;
 pub type SmallF128 = SmallFp<SmallF128Config>;
 
+// Montgomery backend is not supported for moduli larger than 2^64
 // #[derive(SmallFpConfig)]
 // #[modulus = "143244528689204659050391023439224324689"]
 // #[generator = "2"]
@@ -81,6 +82,7 @@ test_small_field!(f32_mont; SmallF32Mont; small_prime_field);
 test_small_field!(f64; SmallF64; small_prime_field);
 test_small_field!(f64_mont; SmallF64Mont; small_prime_field);
 test_small_field!(f128; SmallF128; small_prime_field);
+// Montgomery backend not supported for moduli > 2^64
 // test_small_field!(f128_mont; SmallF128Mont; small_prime_field);
 
 fn main() {

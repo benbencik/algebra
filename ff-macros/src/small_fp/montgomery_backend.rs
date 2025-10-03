@@ -9,7 +9,26 @@ pub(crate) fn backend_impl(
     modulus: u128,
     generator: u128,
 ) -> proc_macro2::TokenStream {
-    let k_bits = 128 - modulus.leading_zeros();
+    // Montgomery backend is only supported for moduli <= 2^64
+    // For larger moduli, the arithmetic would overflow u128
+    if modulus > (1u128 << 64) {
+        panic!(
+            "Montgomery backend is not supported for moduli larger than 2^64. \
+             Modulus {} exceeds this limit. Use the standard backend instead.",
+            modulus
+        );
+    }
+    
+    // Choose k_bits to avoid overflow in Montgomery reduction
+    // We need to ensure that T + m*N fits in u128
+    // where T < N^2 and m*N < R*N
+    // So we need N^2 + R*N < 2^128
+    // If N ≈ 2^64, this requires R < 2^64
+    let k_bits = if modulus <= (1u128 << 32) {
+        32
+    } else {
+        64
+    };
     let r: u128 = 1u128 << k_bits;
     let r_mod_n = r % modulus;
     let r_mask = r - 1;
@@ -72,10 +91,16 @@ pub(crate) fn backend_impl(
 
             let t = a_u128.wrapping_mul(b_u128);
             let m = t.wrapping_mul(#n_prime) & #r_mask;
-            let mn = (m as u128).wrapping_mul(#modulus);
+            let mn = m.wrapping_mul(#modulus);
 
-            let t_plus_mn = t.wrapping_add(mn);
+            // Handle overflow in t + mn
+            let (t_plus_mn, overflow) = t.overflowing_add(mn);
             let mut u = t_plus_mn >> #k_bits;
+            
+            // If there was overflow, we need to add 2^(128-k_bits) to the result
+            if overflow {
+                u += 1u128 << (128 - #k_bits);
+            }
 
             if u >= #modulus {
                 u -= #modulus;
@@ -138,7 +163,12 @@ fn mod_inverse_pow2(n: u128, bits: u32) -> u128 {
 }
 
 pub(crate) fn new(modulus: u128, _ty: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
-    let k_bits = 128 - modulus.leading_zeros();
+    // Use the same k_bits calculation as in backend_impl to avoid inconsistency
+    let k_bits = if modulus <= (1u128 << 32) {
+        32
+    } else {
+        64
+    };
     let r: u128 = 1u128 << k_bits;
     let r_mod_n = r % modulus;
     let r2 = safe_mul_const(r_mod_n, r_mod_n, modulus);
