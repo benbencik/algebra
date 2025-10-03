@@ -244,10 +244,16 @@ macro_rules! __test_field {
                 assert_eq!(zero * b, zero, "Mul by zero failed");
                 assert_eq!(zero * c, zero, "Mul by zero failed");
 
-                // Inverses
-                assert_eq!(a * a.inverse().unwrap(), one, "Mul by inverse failed");
-                assert_eq!(b * b.inverse().unwrap(), one, "Mul by inverse failed");
-                assert_eq!(c * c.inverse().unwrap(), one, "Mul by inverse failed");
+                // Inverses - skip if value is zero (for small fields this can happen)
+                if !a.is_zero() {
+                    assert_eq!(a * a.inverse().unwrap(), one, "Mul by inverse failed");
+                }
+                if !b.is_zero() {
+                    assert_eq!(b * b.inverse().unwrap(), one, "Mul by inverse failed");
+                }
+                if !c.is_zero() {
+                    assert_eq!(c * c.inverse().unwrap(), one, "Mul by inverse failed");
+                }
 
                 // Associativity and commutativity simultaneously
                 let t0 = (a * b) * c;
@@ -737,10 +743,16 @@ macro_rules! __test_small_field {
                 assert_eq!(zero * b, zero, "Mul by zero failed");
                 assert_eq!(zero * c, zero, "Mul by zero failed");
 
-                // Inverses
-                assert_eq!(a * a.inverse().unwrap(), one, "Mul by inverse failed");
-                assert_eq!(b * b.inverse().unwrap(), one, "Mul by inverse failed");
-                assert_eq!(c * c.inverse().unwrap(), one, "Mul by inverse failed");
+                // Inverses - skip if value is zero (for small fields this can happen)
+                if !a.is_zero() {
+                    assert_eq!(a * a.inverse().unwrap(), one, "Mul by inverse failed");
+                }
+                if !b.is_zero() {
+                    assert_eq!(b * b.inverse().unwrap(), one, "Mul by inverse failed");
+                }
+                if !c.is_zero() {
+                    assert_eq!(c * c.inverse().unwrap(), one, "Mul by inverse failed");
+                }
 
                 // Associativity and commutativity simultaneously
                 let t0 = (a * b) * c;
