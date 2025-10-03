@@ -850,31 +850,31 @@ macro_rules! __test_small_field {
         }
 
         // #[test]
-        // fn test_sqrt() {
-        //     if <$field>::SQRT_PRECOMP.is_some() {
-        //         use ark_std::UniformRand;
-        //         let rng = &mut test_rng();
+        fn test_sqrt() {
+            if <$field>::SQRT_PRECOMP.is_some() {
+                use ark_std::UniformRand;
+                let rng = &mut test_rng();
 
-        //         assert!(<$field>::zero().sqrt().unwrap().is_zero());
+                assert!(<$field>::zero().sqrt().unwrap().is_zero());
 
-        //         for _ in 0..ITERATIONS {
-        //             // Ensure sqrt(a^2) = a or -a
-        //             let a = <$field>::rand(rng);
-        //             let b = a.square();
-        //             let sqrt = b.sqrt().unwrap();
-        //             assert!(a == sqrt || -a == sqrt);
+                for _ in 0..ITERATIONS {
+                    // Ensure sqrt(a^2) = a or -a
+                    let a = <$field>::rand(rng);
+                    let b = a.square();
+                    let sqrt = b.sqrt().unwrap();
+                    assert!(a == sqrt || -a == sqrt);
 
-        //             if let Some(mut b) = a.sqrt() {
-        //                 b.square_in_place();
-        //                 assert_eq!(a, b);
-        //             }
+                    if let Some(mut b) = a.sqrt() {
+                        b.square_in_place();
+                        assert_eq!(a, b);
+                    }
 
-        //             let a = <$field>::rand(rng);
-        //             let b = a.square();
-        //             assert_eq!(b.legendre(), LegendreSymbol::QuadraticResidue);
-        //         }
-        //     }
-        // }
+                    let a = <$field>::rand(rng);
+                    let b = a.square();
+                    assert_eq!(b.legendre(), LegendreSymbol::QuadraticResidue);
+                }
+            }
+        }
 
         #[test]
         fn test_mul_by_base_field_elem() {

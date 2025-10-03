@@ -9,6 +9,16 @@ pub(crate) fn backend_impl(
     modulus: u128,
     generator: u128,
 ) -> proc_macro2::TokenStream {
+    // Montgomery backend is only supported for moduli <= 2^64
+    // For larger moduli, the arithmetic would overflow u128
+    if modulus > (1u128 << 64) {
+        panic!(
+            "Montgomery backend is not supported for moduli larger than 2^64. \
+             Modulus {} exceeds this limit. Use the standard backend instead.",
+            modulus
+        );
+    }
+    
     // Choose k_bits to avoid overflow in Montgomery reduction
     // We need to ensure that T + m*N fits in u128
     // where T < N^2 and m*N < R*N
@@ -16,10 +26,8 @@ pub(crate) fn backend_impl(
     // If N ≈ 2^64, this requires R < 2^64
     let k_bits = if modulus <= (1u128 << 32) {
         32
-    } else if modulus <= (1u128 << 64) {
-        64
     } else {
-        128
+        64
     };
     let r: u128 = 1u128 << k_bits;
     let r_mod_n = r % modulus;
@@ -158,10 +166,8 @@ pub(crate) fn new(modulus: u128, _ty: proc_macro2::TokenStream) -> proc_macro2::
     // Use the same k_bits calculation as in backend_impl to avoid inconsistency
     let k_bits = if modulus <= (1u128 << 32) {
         32
-    } else if modulus <= (1u128 << 64) {
-        64
     } else {
-        128
+        64
     };
     let r: u128 = 1u128 << k_bits;
     let r_mod_n = r % modulus;
