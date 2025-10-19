@@ -27,11 +27,14 @@ ark-ec = { workspace = true, default-features = false }
 ark-serialize = { workspace = true, default-features = false }
 ark-algebra-test-templates = { workspace = true, default-features = false }
 ark-algebra-bench-templates = { workspace = true, default-features = false }
+criterion = { workspace = true }
+
 
 [features]
 default = []
-
 asm = ["ark-ff/asm"]
+
+portable_simd = ["ark-ff/portable_simd"]
 
 parallel = ["ark-ff/parallel", "ark-ec/parallel", "ark-std/parallel"]
 
@@ -83,3 +86,9 @@ harness = false
 name = "smallfp"
 path = "benches/smallfp.rs"
 harness = false
+
+[[bench]]
+name = "small_fp_simd"
+path = "benches/small_fp_simd.rs"
+harness = false
+required-features = ["portable_simd"]

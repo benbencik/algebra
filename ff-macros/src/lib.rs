@@ -81,7 +81,8 @@ pub fn mont_config(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// * `modulus`: Specify the prime modulus underlying this prime field.
 /// * `generator`: Specify the generator of the multiplicative subgroup.
 /// * `backend`: Specify either "standard" or "montgomery" backend.
-#[proc_macro_derive(SmallFpConfig, attributes(modulus, generator, backend))]
+/// * `simd` (optional): Set to "true" to generate implementation with SIMD methods.
+#[proc_macro_derive(SmallFpConfig, attributes(modulus, generator, backend, simd))]
 pub fn small_fp_config(input: TokenStream) -> TokenStream {
     let ast: syn::DeriveInput = syn::parse(input).unwrap();
 
@@ -100,7 +101,11 @@ pub fn small_fp_config(input: TokenStream) -> TokenStream {
         .parse()
         .expect("Backend should be a string");
 
-    small_fp::small_fp_config_helper(modulus, generator, backend, ast.ident).into()
+    let enable_simd: bool = fetch_attr("simd", &ast.attrs)
+        .map(|s| s.parse().unwrap_or(false))
+        .unwrap_or(false);
+
+    small_fp::small_fp_config_helper(modulus, generator, backend, enable_simd, ast.ident).into()
 }
 
 const ARG_MSG: &str = "Failed to parse unroll threshold; must be a positive integer";

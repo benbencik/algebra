@@ -1,5 +1,6 @@
 mod montgomery_backend;
 mod standard_backend;
+mod standard_backend_simd;
 mod utils;
 
 use quote::quote;
@@ -10,6 +11,7 @@ pub(crate) fn small_fp_config_helper(
     modulus: u128,
     generator: u128,
     backend: String,
+    enable_simd: bool,
     config_name: proc_macro2::Ident,
 ) -> proc_macro2::TokenStream {
     let ty = match modulus {
@@ -36,8 +38,18 @@ pub(crate) fn small_fp_config_helper(
 
     let new_impl = match backend.as_str() {
         "standard" => standard_backend::new(),
-        "montgomery" => montgomery_backend::new(modulus, ty),
+        "montgomery" => montgomery_backend::new(modulus, ty.clone()),
         _ => panic!("Unknown backend type: {}", backend),
+    };
+
+    let simd_impl = if enable_simd {
+        match backend.as_str() {
+            "standard" => standard_backend_simd::generate_simd_impl(&ty, modulus, &config_name),
+            "montgomery" => quote! {}, 
+            _ => quote! {},
+        }
+    } else {
+        quote! {}
     };
 
     quote! {
@@ -48,5 +60,7 @@ pub(crate) fn small_fp_config_helper(
         impl #config_name {
             #new_impl
         }
+
+        #simd_impl
     }
 }

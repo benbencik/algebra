@@ -15,6 +15,14 @@ pub type SmallF16 = SmallFp<SmallF16Config>;
 pub struct SmallF16ConfigMont;
 pub type SmallF16Mont = SmallFp<SmallF16ConfigMont>;
 
+#[derive(SmallFpConfig)]
+#[modulus = "65521"]
+#[generator = "17"]
+#[backend = "standard"]
+#[simd = "true"]
+pub struct SmallF16SimdConfig;
+pub type SmallF16Simd = SmallFp<SmallF16SimdConfig>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -22,5 +30,6 @@ mod tests {
     use ark_std::vec;
 
     test_small_field!(f16; SmallF16);
+    test_small_field!(f16_simd; SmallF16Simd);
     test_small_field!(f16_mont; SmallF16Mont);
 }

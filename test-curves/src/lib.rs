@@ -1,4 +1,5 @@
 #![no_std]
+#![cfg_attr(feature = "portable_simd", feature(portable_simd))]
 
 pub use ark_ff::{self, fields::models::*, FftField, Field, LegendreSymbol, MontFp, PrimeField};
 
