@@ -1,18 +1,23 @@
 use quote::quote;
 
 /// Generate SmallFpSimd trait implementation for standard backend
-/// 
-/// This generates SIMD operations using the generic operation framework from simd.rs.
-/// Each operation (add, mul, etc.) is implemented using the pairwise operation pattern.
 pub(crate) fn generate_simd_impl(
     ty: &proc_macro2::TokenStream,
     modulus: u128,
     config_name: &proc_macro2::Ident,
 ) -> proc_macro2::TokenStream {
     let lanes = determine_lane_count(ty);
+    let ty_str = ty.to_string();
+    let (upcast_ty, _bits) = match ty_str.as_str() {
+        "u8" => (quote! {u16}, 16u32),
+        "u16" => (quote! {u32}, 32u32),
+        "u32" => (quote! {u64}, 64u32),
+        _ => (quote! {u128}, 128u32),
+    };
     
     // Generate SIMD operations using the generic framework
     let add_impl = generate_add_assign(ty, modulus, lanes);
+    let mul_impl = generate_mul_assign(ty, &upcast_ty, modulus, lanes);
     
     quote! {
         #[cfg(feature = "portable_simd")]
@@ -24,7 +29,7 @@ pub(crate) fn generate_simd_impl(
                 const SIMD_LANES: usize = #lanes;
                 
                 #add_impl
-                
+                #mul_impl 
             }
 
             #[inline]
@@ -48,7 +53,6 @@ pub(crate) fn generate_simd_impl(
                     )
                 }
             }
-
         };
     }
 }
@@ -80,12 +84,8 @@ fn generate_add_assign(
             let modulus_simd = Simd::<#ty, #lanes>::splat(Self::MODULUS);
             let overflow_simd = Simd::<#ty, #lanes>::splat(Self::T::MAX - Self::MODULUS + 1);
             
-            let a_values = cast_slice_mut(a);
-            let b_values = cast_slice(b);
-
-            let (a_chunks, a_remainder) = a_values.as_chunks_mut::<#lanes>();
-            let (b_chunks, b_remainder) = b_values.as_chunks::<#lanes>();
-            
+            let (a_chunks, a_remainder) = cast_slice_mut(a).as_chunks_mut::<#lanes>();
+            let (b_chunks, b_remainder) = cast_slice(b).as_chunks::<#lanes>();
 
             for (a_chunk, b_chunk) in a_chunks.iter_mut().zip(b_chunks.iter()) {
                 let a_simd = Simd::<#ty, #lanes>::from_array(*a_chunk);
@@ -103,6 +103,42 @@ fn generate_add_assign(
                 val += (overflow as #ty) * (Self::T::MAX - Self::MODULUS + 1);
                 let m = val >= Self::MODULUS;
                 *a_val = val - (m as #ty) * Self::MODULUS;
+            }
+        }
+    }
+}
+
+
+// ! this does not handle u128 
+fn generate_mul_assign(
+    ty: &proc_macro2::TokenStream,
+    upcast_ty: &proc_macro2::TokenStream,
+    _modulus: u128,
+    lanes: usize,
+) -> proc_macro2::TokenStream {
+    quote! {
+        #[inline(always)]
+        fn simd_mul_assign(a: &mut [SmallFp<Self>], b: &[SmallFp<Self>]) {
+            assert_eq!(a.len(), b.len(), "slices must have equal length");
+            if a.is_empty() { return; }
+
+            let modulus_simd = Simd::<#upcast_ty, #lanes>::splat(Self::MODULUS as #upcast_ty);
+            
+            let (a_chunks, a_remainder) = cast_slice_mut(a).as_chunks_mut::<#lanes>();
+            let (b_chunks, b_remainder) = cast_slice(b).as_chunks::<#lanes>();
+
+            for (a_chunk, b_chunk) in a_chunks.iter_mut().zip(b_chunks.iter()) {
+                let a_simd = Simd::<#ty, #lanes>::from_array(*a_chunk).cast::<#upcast_ty>();
+                let b_simd = Simd::<#ty, #lanes>::from_array(*b_chunk).cast::<#upcast_ty>();
+
+                let prod = ((a_simd * b_simd) % modulus_simd).cast::<#ty>();
+                *a_chunk = prod.to_array();
+            }
+            
+            for (a_val, b_val) in a_remainder.iter_mut().zip(b_remainder.iter()) {
+                let prod = (*a_val as #upcast_ty) * (*b_val as #upcast_ty);
+                let reduced_prod = prod % (Self::MODULUS as #upcast_ty);
+                *a_val = reduced_prod as #ty;
             }
         }
     }

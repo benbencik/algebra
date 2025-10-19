@@ -28,7 +28,7 @@ fn bench_add_assign(c: &mut Criterion) {
     let mut group = c.benchmark_group("SmallFp AddAssign");
 
     group.bench_with_input(
-        BenchmarkId::new("Scalar", BENCH_SIZE),
+        BenchmarkId::new("Standard", BENCH_SIZE),
         &(a_scalar, b_scalar),
         |bencher, (a, b_vec)| {
             bencher.iter_with_setup(
@@ -58,5 +58,40 @@ fn bench_add_assign(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_add_assign);
+fn bench_mul_assign(c: &mut Criterion) {
+    let (a_scalar, b_scalar, a_simd, b_simd) = setup_bench();
+
+    let mut group = c.benchmark_group("SmallFp MulAssign");
+
+    group.bench_with_input(
+        BenchmarkId::new("Standard", BENCH_SIZE),
+        &(a_scalar, b_scalar),
+        |bencher, (a, b_vec)| {
+            bencher.iter_with_setup(
+                || a.clone(),
+                |mut a_clone| {
+                    for (x, y) in a_clone.iter_mut().zip(b_vec.iter()) {
+                        *x *= y;
+                    }
+                },
+            )
+        },
+    );
+
+    group.bench_with_input(
+        BenchmarkId::new("SIMD", BENCH_SIZE),
+        &(a_simd, b_simd),
+        |bencher, (a, b_vec)| {
+            bencher.iter_with_setup(
+                || a.clone(),
+                |mut a_clone| {
+                    SmallF16SimdConfig::simd_mul_assign(&mut a_clone, b_vec);
+                },
+            )
+        },
+    );
+
+    group.finish();
+}
+criterion_group!(benches, bench_add_assign, bench_mul_assign);
 criterion_main!(benches);
