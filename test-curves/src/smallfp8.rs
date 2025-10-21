@@ -15,6 +15,14 @@ pub type SmallF8 = SmallFp<SmallF8Config>;
 pub struct SmallF8ConfigMont;
 pub type SmallF8Mont = SmallFp<SmallF8ConfigMont>;
 
+#[derive(SmallFpConfig)]
+#[modulus = "251"]
+#[generator = "6"]
+#[backend = "standard"]
+#[simd = "true"]
+pub struct SmallF8SimdConfig;
+pub type SmallF8Simd = SmallFp<SmallF8SimdConfig>;
+
 #[cfg(test)]
 mod tests {
     use super::*;

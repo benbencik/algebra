@@ -60,12 +60,12 @@ pub(crate) fn generate_simd_impl(
 // Targeting the avx2 instruction set with 256-bit registers
 fn determine_lane_count(ty: &proc_macro2::TokenStream) -> usize {
     match ty.to_string().as_str() {
-        "u8" => 32, 
-        "u16" => 16, 
-        "u32" => 8, 
-        "u64" => 4, 
-        "u128" => 2,
+        "u8" => 64, 
+        "u16" => 64, 
+        "u32" => 64, 
         _ => panic!("Type not supported for simd"),     
+        // "u64" => 64, 
+        // "u128" => 2,
     }
 }
 
@@ -76,38 +76,39 @@ fn generate_add_assign(
 ) -> proc_macro2::TokenStream {
     quote! {
         #[inline(always)]
-        fn simd_add_assign(a: &mut [SmallFp<Self>], b: &[SmallFp<Self>]) {
-
+        fn add_assign_simd(a: &mut [SmallFp<Self>], b: &[SmallFp<Self>]) {
             assert_eq!(a.len(), b.len(), "slices must have equal length");
             if a.is_empty() { return; }
 
             let modulus_simd = Simd::<#ty, #lanes>::splat(Self::MODULUS);
-            let overflow_simd = Simd::<#ty, #lanes>::splat(Self::T::MAX - Self::MODULUS + 1);
+            let overflow_correction = Self::T::MAX - Self::MODULUS + 1;
+            let overflow_correction_simd = Simd::<#ty, #lanes>::splat(overflow_correction);
             
-            let (a_chunks, a_remainder) = cast_slice_mut(a).as_chunks_mut::<#lanes>();
-            let (b_chunks, b_remainder) = cast_slice(b).as_chunks::<#lanes>();
-
-            for (a_chunk, b_chunk) in a_chunks.iter_mut().zip(b_chunks.iter()) {
-                let a_simd = Simd::<#ty, #lanes>::from_array(*a_chunk);
-                let b_simd = Simd::<#ty, #lanes>::from_array(*b_chunk);
-                let mut sum = a_simd + b_simd;
+            let a_val: &mut [#ty] = cast_slice_mut(a);
+            let b_val: &[#ty] = cast_slice(b);
+            
+            let chunks = a_val.len() / #lanes;
+            for i in 0..chunks {
+                let start_idx = i * #lanes;
+                let end_idx = start_idx + #lanes;
+                let a_packed = Simd::<#ty, #lanes>::from_slice(&a_val[start_idx..end_idx]);
+                let b_packed = Simd::<#ty, #lanes>::from_slice(&b_val[start_idx..end_idx]);
+                let mut sum = a_packed + b_packed;
                 
-                sum = (a_simd.simd_ge(sum)).select(sum + overflow_simd, sum);
-                let reduced = (sum.simd_ge(modulus_simd)).select(sum - modulus_simd, sum);
-                *a_chunk = reduced.to_array();
+                sum = a_packed.simd_ge(sum).select(sum + overflow_correction_simd, sum);
+                sum = (sum.simd_ge(modulus_simd)).select(sum - modulus_simd, sum);
+                sum.copy_to_slice(&mut a_val[start_idx..end_idx]);
             }
             
-            for (a_val, b_val) in a_remainder.iter_mut().zip(b_remainder.iter()) {
-                let (mut val, overflow) = a_val.overflowing_add(*b_val);
-
-                val += (overflow as #ty) * (Self::T::MAX - Self::MODULUS + 1);
-                let m = val >= Self::MODULUS;
-                *a_val = val - (m as #ty) * Self::MODULUS;
+            let remainder_idx = chunks * #lanes;
+            for i in remainder_idx..a_val.len() {
+                let (mut val, overflow) = a_val[i].overflowing_add(b_val[i]);
+                val += (overflow as #ty) * overflow_correction;
+                a_val[i] = val - ((val >= Self::MODULUS) as #ty) * Self::MODULUS;
             }
         }
     }
 }
-
 
 // ! this does not handle u128 
 fn generate_mul_assign(
@@ -118,27 +119,30 @@ fn generate_mul_assign(
 ) -> proc_macro2::TokenStream {
     quote! {
         #[inline(always)]
-        fn simd_mul_assign(a: &mut [SmallFp<Self>], b: &[SmallFp<Self>]) {
+        fn mul_assign_simd(a: &mut [SmallFp<Self>], b: &[SmallFp<Self>]) {
             assert_eq!(a.len(), b.len(), "slices must have equal length");
             if a.is_empty() { return; }
 
             let modulus_simd = Simd::<#upcast_ty, #lanes>::splat(Self::MODULUS as #upcast_ty);
-            
-            let (a_chunks, a_remainder) = cast_slice_mut(a).as_chunks_mut::<#lanes>();
-            let (b_chunks, b_remainder) = cast_slice(b).as_chunks::<#lanes>();
+            let a_val = cast_slice_mut(a);
+            let b_val = cast_slice(b);
 
-            for (a_chunk, b_chunk) in a_chunks.iter_mut().zip(b_chunks.iter()) {
-                let a_simd = Simd::<#ty, #lanes>::from_array(*a_chunk).cast::<#upcast_ty>();
-                let b_simd = Simd::<#ty, #lanes>::from_array(*b_chunk).cast::<#upcast_ty>();
+            let chunks = a_val.len() / #lanes;
+            for i in 0..chunks {
+                let start_idx = i * #lanes;
+                let end_idx = start_idx + #lanes;
+                let a_simd = Simd::<#ty, #lanes>::from_slice(&a_val[start_idx..end_idx]).cast::<#upcast_ty>();
+                let b_simd = Simd::<#ty, #lanes>::from_slice(&b_val[start_idx..end_idx]).cast::<#upcast_ty>();
 
                 let prod = ((a_simd * b_simd) % modulus_simd).cast::<#ty>();
-                *a_chunk = prod.to_array();
+                prod.copy_to_slice(&mut a_val[start_idx..end_idx]);
             }
             
-            for (a_val, b_val) in a_remainder.iter_mut().zip(b_remainder.iter()) {
-                let prod = (*a_val as #upcast_ty) * (*b_val as #upcast_ty);
+            let remainder_idx = chunks * #lanes;
+            for i in remainder_idx..a_val.len() {
+                let prod = (a_val[i] as #upcast_ty) * (b_val[i] as #upcast_ty);
                 let reduced_prod = prod % (Self::MODULUS as #upcast_ty);
-                *a_val = reduced_prod as #ty;
+                a_val[i] = reduced_prod as #ty;
             }
         }
     }

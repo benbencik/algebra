@@ -15,6 +15,15 @@ pub type SmallF32 = SmallFp<SmallField>;
 pub struct SmallFieldMont;
 pub type SmallF32Mont = SmallFp<SmallFieldMont>;
 
+#[derive(SmallFpConfig)]
+#[modulus = "2147483647"] // m31
+#[generator = "7"]
+#[backend = "standard"]
+#[simd = "true"]
+pub struct SmallF32SimdConfig;
+pub type SmallF32Simd = SmallFp<SmallF32SimdConfig>;
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
