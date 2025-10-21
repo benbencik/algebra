@@ -28,10 +28,10 @@ macro_rules! bench_field {
 
             group.bench_with_input(
                 BenchmarkId::new("add_assign_standard", BENCH_SIZE),
-                &(a_scalar.clone(), b_scalar.clone()),
+                &(&a_scalar, &b_scalar),
                 |bencher, (a, b_vec)| {
                     bencher.iter_with_setup(
-                        || a.clone(),
+                        || a.to_vec(),
                         |mut a_clone| {
                             for (x, y) in a_clone.iter_mut().zip(b_vec.iter()) {
                                 *x += y;
@@ -43,10 +43,10 @@ macro_rules! bench_field {
 
             group.bench_with_input(
                 BenchmarkId::new("add_assign_simd", BENCH_SIZE),
-                &(a_simd.clone(), b_simd.clone()),
+                &(&a_simd, &b_simd),
                 |bencher, (a, b_vec)| {
                     bencher.iter_with_setup(
-                        || a.clone(),
+                        || a.to_vec(),
                         |mut a_clone| {
                             <$field_simd_config>::add_assign_simd(&mut a_clone, b_vec);
                         },
@@ -55,14 +55,27 @@ macro_rules! bench_field {
             );
 
             group.bench_with_input(
-                BenchmarkId::new("mul_assign_standard", BENCH_SIZE),
-                &(a_scalar, b_scalar),
+                BenchmarkId::new("mul_assign_simd", BENCH_SIZE),
+                &(&a_simd, &b_simd),
                 |bencher, (a, b_vec)| {
                     bencher.iter_with_setup(
-                        || a.clone(),
+                        || a.to_vec(),
+                        |mut a_clone| {
+                            <$field_simd_config>::mul_assign_simd(&mut a_clone, b_vec);
+                        },
+                    )
+                },
+            );
+
+            group.bench_with_input(
+                BenchmarkId::new("sub_assign_standard", BENCH_SIZE),
+                &(&a_scalar, &b_scalar),
+                |bencher, (a, b_vec)| {
+                    bencher.iter_with_setup(
+                        || a.to_vec(),
                         |mut a_clone| {
                             for (x, y) in a_clone.iter_mut().zip(b_vec.iter()) {
-                                *x *= y;
+                                *x -= y;
                             }
                         },
                     )
@@ -70,13 +83,41 @@ macro_rules! bench_field {
             );
 
             group.bench_with_input(
-                BenchmarkId::new("mul_assign_simd", BENCH_SIZE),
-                &(a_simd, b_simd),
+                BenchmarkId::new("sub_assign_simd", BENCH_SIZE),
+                &(&a_simd, &b_simd),
                 |bencher, (a, b_vec)| {
                     bencher.iter_with_setup(
-                        || a.clone(),
+                        || a.to_vec(),
                         |mut a_clone| {
-                            <$field_simd_config>::mul_assign_simd(&mut a_clone, b_vec);
+                            <$field_simd_config>::sub_assign_simd(&mut a_clone, b_vec);
+                        },
+                    )
+                },
+            );
+
+            group.bench_with_input(
+                BenchmarkId::new("div_assign_standard", BENCH_SIZE),
+                &(&a_scalar, &b_scalar),
+                |bencher, (a, b_vec)| {
+                    bencher.iter_with_setup(
+                        || a.to_vec(),
+                        |mut a_clone| {
+                            for (x, y) in a_clone.iter_mut().zip(b_vec.iter()) {
+                                *x /= y;
+                            }
+                        },
+                    )
+                },
+            );
+
+            group.bench_with_input(
+                BenchmarkId::new("div_assign_simd", BENCH_SIZE),
+                &(&a_simd, &b_simd),
+                |bencher, (a, b_vec)| {
+                    bencher.iter_with_setup(
+                        || a.to_vec(),
+                        |mut a_clone| {
+                            <$field_simd_config>::div_assign_simd(&mut a_clone, b_vec);
                         },
                     )
                 },

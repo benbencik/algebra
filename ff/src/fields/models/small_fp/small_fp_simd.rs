@@ -5,5 +5,7 @@ pub trait SmallFpSimd: SmallFpConfig {
     const SIMD_LANES: usize;
 
     fn add_assign_simd(a: &mut [SmallFp<Self>], b: &[SmallFp<Self>]);
+    fn sub_assign_simd(a: &mut [SmallFp<Self>], b: &[SmallFp<Self>]);
     fn mul_assign_simd(a: &mut [SmallFp<Self>], b: &[SmallFp<Self>]);
+    fn div_assign_simd(a: &mut [SmallFp<Self>], b: &[SmallFp<Self>]);
 }
