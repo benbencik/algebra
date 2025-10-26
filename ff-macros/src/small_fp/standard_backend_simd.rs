@@ -134,14 +134,31 @@ fn generate_pairwise_simd_op(
             
             // main simd loop
             let chunks = a_val.len() / #lanes;
-            for i in 0..chunks {
-                let start_idx = i * #lanes;
-                let end_idx = start_idx + #lanes;
-                let a_packed = Simd::<#ty, #lanes>::from_slice(&a_val[start_idx..end_idx]);
-                let b_packed = Simd::<#ty, #lanes>::from_slice(&b_val[start_idx..end_idx]);
+            let mut a_ptr = a_val.as_mut_ptr();
+            let mut b_ptr = b_val.as_ptr();
+            let mut iters = chunks;
+            while iters > 0 {
+                let a_packed = unsafe {
+                    let a_arr = (a_ptr as *const [#ty; #lanes]).read_unaligned();
+                    Simd::<#ty, #lanes>::from_array(a_arr)
+                };
+                let b_packed = unsafe {
+                    let b_arr = (b_ptr as *const [#ty; #lanes]).read_unaligned();
+                    Simd::<#ty, #lanes>::from_array(b_arr)
+                };
                 
-                let result = {#simd_computation };
-                result.copy_to_slice(&mut a_val[start_idx..end_idx]);
+                let result = { #simd_computation };
+
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        result.as_array().as_ptr(),
+                        a_ptr,
+                        #lanes,
+                    );
+                    a_ptr = a_ptr.add(#lanes);
+                    b_ptr = b_ptr.add(#lanes);
+                }
+                iters -= 1;
             }
             
             // handle remainder
