@@ -13,7 +13,7 @@ pub type SmallF64 = SmallFp<SmallF64Config>;
 #[generator = "7"]
 #[backend = "montgomery"]
 pub struct SmallF64ConfigMont;
-pub type SmallF64Mont = SmallFp<SmallF64ConfigMont>;
+pub type SmallF64MontGoldilock = SmallFp<SmallF64ConfigMont>;
 
 #[cfg(test)]
 mod tests {
@@ -22,5 +22,5 @@ mod tests {
     use ark_std::vec;
 
     test_small_field!(f64; SmallF64);
-    test_small_field!(f64_mont; SmallF64Mont);
+    test_small_field!(f64_mont; SmallF64MontGoldilock);
 }
