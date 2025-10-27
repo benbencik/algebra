@@ -27,11 +27,14 @@ pub type SmallF16Simd = SmallFp<SmallF16SimdConfig>;
 mod tests {
     use super::*;
     use ark_algebra_test_templates::*;
+    use ark_std::vec;
+
+    test_small_field!(f16; SmallF16);
+    test_small_field!(f16_mont; SmallF16Mont);
 
     // Temporarily disabled due to missing SmallFpSimd trait methods
     /*
     use ark_ff::{PrimeField, SmallFpSimd, UniformRand, Zero};
-    use ark_std::vec;
 
     const SIMD_TEST_SIZE: usize = 10_000;
     #[test]
@@ -129,7 +132,4 @@ mod tests {
         }
     }
     */
-
-    test_small_field!(f16; SmallF16);
-    test_small_field!(f16_mont; SmallF16Mont);
 }
