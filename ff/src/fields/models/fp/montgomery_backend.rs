@@ -181,7 +181,25 @@ pub trait MontConfig<const N: usize>: 'static + Sync + Send + Sized {
     fn mul_assign(a: &mut Fp<MontBackend<Self, N>, N>, b: &Fp<MontBackend<Self, N>, N>) {
         // No-carry optimisation applied to CIOS
         if Self::CAN_USE_NO_CARRY_MUL_OPT {
-            if N <= 6
+            // Optimized path for N == 1 (single limb)
+            if N == 1 {
+                // Compute a * b in 128 bits
+                let t = ((a.0).0[0] as u128) * ((b.0).0[0] as u128);
+                
+                // Montgomery reduction: compute k = (t_lo * INV) mod 2^64
+                let k = (t as u64).wrapping_mul(Self::INV);
+                
+                // Compute k * MODULUS
+                let km = (k as u128) * (Self::MODULUS.0[0] as u128);
+                
+                // Compute (t + km) / 2^64
+                // The lower 64 bits of (t + km) are guaranteed to be 0 (by design of Montgomery reduction)
+                // so we only need the upper 64 bits
+                let result = ((t + km) >> 64) as u64;
+                
+                (a.0).0[0] = result;
+                a.subtract_modulus();
+            } else if N <= 6
                 && N > 1
                 && cfg!(all(
                     feature = "asm",
@@ -201,7 +219,6 @@ pub trait MontConfig<const N: usize>: 'static + Sync + Send + Sized {
                 #[allow(unsafe_code)]
                 #[rustfmt::skip]
 
-                // Tentatively avoid using assembly for `N == 1`.
                 match N {
                     2 => { ark_ff_asm::x86_64_asm_mul!(2, (a.0).0, (b.0).0); },
                     3 => { ark_ff_asm::x86_64_asm_mul!(3, (a.0).0, (b.0).0); },
