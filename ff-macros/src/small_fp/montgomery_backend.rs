@@ -193,32 +193,34 @@ fn generate_mul_impl(
         };
 
         let r_mask_downcast = quote! { #r_mask as #mul_ty };
-        let n_prime_downcast = quote! { #n_prime as #mul_ty };
         let modulus_downcast = quote! { #modulus as #mul_ty };
-        let one = quote! { 1 as #mul_ty };
+        let n_prime_downcast = quote! { #n_prime as #mul_ty };
 
         quote! {
             #[inline(always)]
             fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-                let a_val = a.value as #mul_ty;
-                let b_val = b.value as #mul_ty;
-
-                let t = a_val * b_val;
-                let t_low = t & #r_mask_downcast;
-
-                // m = t_lo * n_prime & r_mask
-                let m = t_low.wrapping_mul(#n_prime_downcast) & #r_mask_downcast;
-
-                // mn = m * modulus
-                let mn = m * #modulus_downcast;
-
-                // (t + mn) / R
-                let (sum, overflow) = t.overflowing_add(mn);
-                let mut u = sum >> #k_bits;
-
-                u += ((#one) << (#bits - #k_bits)) * (overflow as #mul_ty);
-                u -= #modulus_downcast * ((u >= #modulus_downcast) as #mul_ty);
-                a.value = u as Self::T;
+                // Montgomery multiplication using CIOS algorithm
+                
+                // Compute a * b in the wider type
+                let t = (a.value as #mul_ty) * (b.value as #mul_ty);
+                
+                // Montgomery reduction: k = (t * INV) mod R
+                let k = t.wrapping_mul(#n_prime_downcast) & #r_mask_downcast;
+                
+                // Compute k * MODULUS  
+                let km = k * #modulus_downcast;
+                
+                // Compute (t + km) / R, handling overflow
+                let (sum, overflow) = t.overflowing_add(km);
+                let mut result = sum >> #k_bits;
+                
+                // Handle overflow (branchless)
+                result += ((1 as #mul_ty) << (#bits - #k_bits)) * (overflow as #mul_ty);
+                
+                // Final conditional subtraction (branchless)
+                result -= #modulus_downcast * ((result >= #modulus_downcast) as #mul_ty);
+                
+                a.value = result as Self::T;
             }
         }
     }
