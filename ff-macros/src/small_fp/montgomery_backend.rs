@@ -185,17 +185,16 @@ fn generate_mul_impl(
             }
         }
     } else {
-        let (mul_ty, bits) = match ty_str.as_str() {
-            "u8" => (quote! {u16}, 16u32),
-            "u16" => (quote! {u32}, 32u32),
-            "u32" => (quote! {u64}, 64u32),
-            _ => (quote! {u128}, 128u32),
+        // For u8/u16/u32, use u64/u128 for computation to match native register width
+        // This is the same strategy as Fp which uses u64 even for smaller moduli
+        let mul_ty = match ty_str.as_str() {
+            "u8" | "u16" | "u32" => quote! {u64},
+            _ => quote! {u128},
         };
 
         let r_mask_downcast = quote! { #r_mask as #mul_ty };
         let n_prime_downcast = quote! { #n_prime as #mul_ty };
         let modulus_downcast = quote! { #modulus as #mul_ty };
-        let one = quote! { 1 as #mul_ty };
 
         quote! {
             #[inline(always)]
@@ -203,20 +202,18 @@ fn generate_mul_impl(
                 let a_val = a.value as #mul_ty;
                 let b_val = b.value as #mul_ty;
 
+                // Compute t = a * b
                 let t = a_val * b_val;
-                let t_low = t & #r_mask_downcast;
 
-                // m = t_lo * n_prime & r_mask
-                let m = t_low.wrapping_mul(#n_prime_downcast) & #r_mask_downcast;
+                // Compute m = (t * n_prime) mod R
+                let m = t.wrapping_mul(#n_prime_downcast) & #r_mask_downcast;
 
-                // mn = m * modulus
+                // Compute (t + m * modulus) / R
                 let mn = m * #modulus_downcast;
-
-                // (t + mn) / R
-                let (sum, overflow) = t.overflowing_add(mn);
+                let sum = t.wrapping_add(mn);
                 let mut u = sum >> #k_bits;
 
-                u += ((#one) << (#bits - #k_bits)) * (overflow as #mul_ty);
+                // Final conditional subtraction
                 u -= #modulus_downcast * ((u >= #modulus_downcast) as #mul_ty);
                 a.value = u as Self::T;
             }
