@@ -134,8 +134,9 @@ pub(crate) fn backend_impl(
 }
 
 // Selects the appropriate multiplication algorithm at compile time:
-// if modulus <= u64, multiply by casting to the next largest primitive
-// otherwise, multiply in parts to form a 256-bit product before reduction
+// For u8/u16/u32: use u64 intermediate (like Fp<MontBackend, 1> does)
+// For u64: use u128 intermediate
+// For u128: use 256-bit arithmetic
 fn generate_mul_impl(
     ty: &proc_macro2::TokenStream,
     modulus: u128,
@@ -184,39 +185,41 @@ fn generate_mul_impl(
                 a.value = u as Self::T;
             }
         }
+    } else if ty_str == "u8" || ty_str == "u16" || ty_str == "u32" {
+        // For u8, u16, u32: use u64 intermediate like Fp<MontBackend, 1> does
+        // This avoids the overhead of using larger types unnecessarily
+        let n_prime_downcast = quote! { #n_prime as u64 };
+        let modulus_downcast = quote! { #modulus as u64 };
+        let r_mask_downcast = quote! { #r_mask as u64 };
+        
+        quote! {
+            #[inline(always)]
+            fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                let t = (a.value as u64) * (b.value as u64);
+                let m = t.wrapping_mul(#n_prime_downcast) & #r_mask_downcast;
+                let (sum, overflow) = t.overflowing_add(m * #modulus_downcast);
+                let mut u = sum >> #k_bits;
+                u += ((overflow as u64) << (64 - #k_bits));
+                u -= #modulus_downcast * ((u >= #modulus_downcast) as u64);
+                a.value = u as Self::T;
+            }
+        }
     } else {
-        let (mul_ty, bits) = match ty_str.as_str() {
-            "u8" => (quote! {u16}, 16u32),
-            "u16" => (quote! {u32}, 32u32),
-            "u32" => (quote! {u64}, 64u32),
-            _ => (quote! {u128}, 128u32),
-        };
-
+        // For u64: use u128 intermediate
+        let (mul_ty, bits) = (quote! {u128}, 128u32);
         let r_mask_downcast = quote! { #r_mask as #mul_ty };
         let n_prime_downcast = quote! { #n_prime as #mul_ty };
         let modulus_downcast = quote! { #modulus as #mul_ty };
-        let one = quote! { 1 as #mul_ty };
+        let overflow_shift = bits - k_bits;
 
         quote! {
             #[inline(always)]
             fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-                let a_val = a.value as #mul_ty;
-                let b_val = b.value as #mul_ty;
-
-                let t = a_val * b_val;
-                let t_low = t & #r_mask_downcast;
-
-                // m = t_lo * n_prime & r_mask
-                let m = t_low.wrapping_mul(#n_prime_downcast) & #r_mask_downcast;
-
-                // mn = m * modulus
-                let mn = m * #modulus_downcast;
-
-                // (t + mn) / R
-                let (sum, overflow) = t.overflowing_add(mn);
+                let t = (a.value as #mul_ty) * (b.value as #mul_ty);
+                let m = t.wrapping_mul(#n_prime_downcast) & #r_mask_downcast;
+                let (sum, overflow) = t.overflowing_add(m * #modulus_downcast);
                 let mut u = sum >> #k_bits;
-
-                u += ((#one) << (#bits - #k_bits)) * (overflow as #mul_ty);
+                u += ((overflow as #mul_ty) << #overflow_shift);
                 u -= #modulus_downcast * ((u >= #modulus_downcast) as #mul_ty);
                 a.value = u as Self::T;
             }
