@@ -188,19 +188,21 @@ fn generate_mul_impl(
     } else if ty_str == "u8" || ty_str == "u16" || ty_str == "u32" {
         // For u8, u16, u32: use u64 intermediate like Fp<MontBackend, 1> does
         // This avoids the overhead of using larger types unnecessarily
-        let n_prime_downcast = quote! { #n_prime as u64 };
-        let modulus_downcast = quote! { #modulus as u64 };
-        let r_mask_downcast = quote! { #r_mask as u64 };
         
         quote! {
             #[inline(always)]
             fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                const INV: u64 = #n_prime as u64;
+                const MODULUS_U64: u64 = #modulus as u64;
+                const R_MASK: u64 = #r_mask as u64;
+                const K_BITS: u32 = #k_bits;
+                
                 let t = (a.value as u64) * (b.value as u64);
-                let m = t.wrapping_mul(#n_prime_downcast) & #r_mask_downcast;
-                let (sum, overflow) = t.overflowing_add(m * #modulus_downcast);
-                let mut u = sum >> #k_bits;
-                u += ((overflow as u64) << (64 - #k_bits));
-                u -= #modulus_downcast * ((u >= #modulus_downcast) as u64);
+                let m = t.wrapping_mul(INV) & R_MASK;
+                let (sum, overflow) = t.overflowing_add(m * MODULUS_U64);
+                let mut u = sum >> K_BITS;
+                u += (overflow as u64) << (64 - K_BITS);
+                u -= MODULUS_U64 * ((u >= MODULUS_U64) as u64);
                 a.value = u as Self::T;
             }
         }
