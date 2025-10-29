@@ -65,6 +65,7 @@ fn bench_add<'a, F: Field + Copy, M: criterion::measurement::Measurement>(
     group: &mut BenchmarkGroup<'a, M>,
     name: &str,
     arr: &[F],
+    arr2: &[F],
 ) {
     let samples = arr.len();
     group.bench_function(name, |b| {
@@ -72,7 +73,7 @@ fn bench_add<'a, F: Field + Copy, M: criterion::measurement::Measurement>(
         b.iter(|| {
             i = (i + 1) % samples;
             let mut tmp = arr[i];
-            tmp += arr[(i*1) % samples];
+            tmp += arr2[i];
             tmp
         })
     });
@@ -82,6 +83,7 @@ fn bench_mul<'a, F: Field + Copy, M: criterion::measurement::Measurement>(
     group: &mut BenchmarkGroup<'a, M>,
     name: &str,
     arr: &[F],
+    arr2: &[F],
 ) {
     let samples = arr.len();
     group.bench_function(name, |b| {
@@ -89,98 +91,65 @@ fn bench_mul<'a, F: Field + Copy, M: criterion::measurement::Measurement>(
         b.iter(|| {
             i = (i + 1) % samples;
             let mut tmp = arr[i];
-            tmp *= arr[(i*1) % samples];
+            tmp *= arr2[i];
             tmp
         })
     });
 }
 
+macro_rules! bench_operations {
+    ($group:expr, $samples:expr, $rng:expr, $bench_fn:ident, $($name:expr, $small_ty:ty, $large_ty:ty),* $(,)?) => {
+        $(
+            let arr = (0..$samples).map(|_| <$small_ty>::rand(&mut $rng)).collect::<Vec<_>>();
+            let arr_2 = (0..$samples).map(|_| <$small_ty>::rand(&mut $rng)).collect::<Vec<_>>();
+            let fp_arr: Vec<_> = arr.iter().map(|x| <$large_ty>::from(x.into_bigint().0[0])).collect();
+            let fp_arr_2: Vec<_> = arr_2.iter().map(|x| <$large_ty>::from(x.into_bigint().0[0])).collect();
+            $bench_fn(&mut $group, &format!("{}-{}", $name, stringify!($large_ty)), &fp_arr, &fp_arr_2);
+            $bench_fn(&mut $group, &format!("{}-{}", $name, stringify!($small_ty)), &arr, &arr_2);
+        )*
+    };
+}
+
 fn bench_addition(c: &mut criterion::Criterion) {
     use ark_ff::PrimeField;
-    const SAMPLES: usize = 10_000;
+    const SAMPLES: usize = 1000;
     let mut rng = ark_std::test_rng();
     let mut group = c.benchmark_group("Add");
 
-    let smallf8 = (0..SAMPLES).map(|_| SmallF8Mont::rand(&mut rng)).collect::<Vec<_>>();
-    let f8: Vec<_> = smallf8.iter().map(|x| F8::from(x.into_bigint().0[0])).collect();
-    bench_add(&mut group, "00-F8", &f8);
-    bench_add(&mut group, "00-SmallF8Mont", &smallf8);
-
-    let smallf16 = (0..SAMPLES).map(|_| SmallF16Mont::rand(&mut rng)).collect::<Vec<_>>();
-    let f16: Vec<_> = smallf16.iter().map(|x| F16::from(x.into_bigint().0[0])).collect();
-    bench_add(&mut group, "01-F16", &f16);
-    bench_add(&mut group, "01-SmallF16", &smallf16);
-
-    let smallf32_m31 = (0..SAMPLES).map(|_| SmallF32MontM31::rand(&mut rng)).collect::<Vec<_>>();
-    let f32_m31: Vec<_> = smallf32_m31.iter().map(|x| F32::from(x.into_bigint().0[0])).collect();
-    bench_add(&mut group, "02-F32-M31", &f32_m31);
-    bench_add(&mut group, "02-SmallF32-M31", &smallf32_m31);
-
-    let smallf32_bb = (0..SAMPLES).map(|_| SmallF32MontBabybear::rand(&mut rng)).collect::<Vec<_>>();
-    let f32_bb: Vec<_> = smallf32_bb.iter().map(|x| F32Babybear::from(x.into_bigint().0[0])).collect();
-    bench_add(&mut group, "03-F32-Babybear", &f32_bb);
-    bench_add(&mut group, "03-SmallF32-Babybear", &smallf32_bb);
-
-    let smallf64 = (0..SAMPLES).map(|_| SmallF64MontGoldilock::rand(&mut rng)).collect::<Vec<_>>();
-    let f64_: Vec<_> = smallf64.iter().map(|x| F64::from(x.into_bigint().0[0])).collect();
-    bench_add(&mut group, "04-F64-Goldilock", &f64_);
-    bench_add(&mut group, "04-SmallF64-Goldilock", &smallf64);
-
-    let smallf128 = (0..SAMPLES).map(|_| SmallF128Mont::rand(&mut rng)).collect::<Vec<_>>();
-    let f128: Vec<_> = smallf128
-        .iter()
-        .map(|x| {
-            let bigint = x.into_bigint();
-            F128::from(bigint)
-        })
-        .collect();
-    bench_add(&mut group, "05-F128", &f128);
-    bench_add(&mut group, "05-SmallF128", &smallf128);
+    bench_operations!(
+        group,
+        SAMPLES,
+        rng,
+        bench_add,
+        "00", SmallF8Mont, F8,
+        "01", SmallF16Mont, F16,
+        "02", SmallF32MontM31, F32,
+        "03", SmallF32MontBabybear, F32Babybear,
+        "04", SmallF64MontGoldilock, F64,
+        "05", SmallF128Mont, F128,
+    );
 
     group.finish();
 }
 
 fn bench_multiplication(c: &mut criterion::Criterion) {
     use ark_ff::PrimeField;
-    const SAMPLES: usize = 10_000;
+    const SAMPLES: usize = 1000;
     let mut rng = ark_std::test_rng();
     let mut group = c.benchmark_group("Mul");
 
-    let smallf8 = (0..SAMPLES).map(|_| SmallF8Mont::rand(&mut rng)).collect::<Vec<_>>();
-    let f8: Vec<_> = smallf8.iter().map(|x| F8::from(x.into_bigint().0[0])).collect();
-    bench_mul(&mut group, "00-F8", &f8);
-    bench_mul(&mut group, "00-SmallF8", &smallf8);
-
-    let smallf16 = (0..SAMPLES).map(|_| SmallF16Mont::rand(&mut rng)).collect::<Vec<_>>();
-    let f16: Vec<_> = smallf16.iter().map(|x| F16::from(x.into_bigint().0[0])).collect();
-    bench_mul(&mut group, "01-F16", &f16);
-    bench_mul(&mut group, "01-SmallF16", &smallf16);
-
-    let smallf32_m31 = (0..SAMPLES).map(|_| SmallF32MontM31::rand(&mut rng)).collect::<Vec<_>>();
-    let f32_m31: Vec<_> = smallf32_m31.iter().map(|x| F32::from(x.into_bigint().0[0])).collect();
-    bench_mul(&mut group, "02-F32-M31", &f32_m31);
-    bench_mul(&mut group, "02-SmallF32-M31", &smallf32_m31);
-
-    let smallf32_bb = (0..SAMPLES).map(|_| SmallF32MontBabybear::rand(&mut rng)).collect::<Vec<_>>();
-    let f32_bb: Vec<_> = smallf32_bb.iter().map(|x| F32Babybear::from(x.into_bigint().0[0])).collect();
-    bench_mul(&mut group, "03-F32-Babybear", &f32_bb);
-    bench_mul(&mut group, "03-SmallF32-Babybear", &smallf32_bb);
-
-    let smallf64 = (0..SAMPLES).map(|_| SmallF64MontGoldilock::rand(&mut rng)).collect::<Vec<_>>();
-    let f64_: Vec<_> = smallf64.iter().map(|x| F64::from(x.into_bigint().0[0])).collect();
-    bench_mul(&mut group, "04-F64-Goldilock", &f64_);
-    bench_mul(&mut group, "04-SmallF64-Goldilock", &smallf64);
-
-    let smallf128 = (0..SAMPLES).map(|_| SmallF128Mont::rand(&mut rng)).collect::<Vec<_>>();
-    let f128: Vec<_> = smallf128
-        .iter()
-        .map(|x| {
-            let bigint = x.into_bigint();
-            F128::from(bigint)
-        })
-        .collect();
-    bench_mul(&mut group, "05-F128", &f128);
-    bench_mul(&mut group, "05-SmallF128Mont", &smallf128);
+    bench_operations!(
+        group,
+        SAMPLES,
+        rng,
+        bench_mul,
+        "00", SmallF8Mont, F8,
+        "01", SmallF16Mont, F16,
+        "02", SmallF32MontM31, F32,
+        "03", SmallF32MontBabybear, F32Babybear,
+        "04", SmallF64MontGoldilock, F64,
+        "05", SmallF128Mont, F128,
+    );
 
     group.finish();
 }
@@ -189,6 +158,6 @@ criterion_group!(addition_benches, bench_addition);
 criterion_group!(multiplication_benches, bench_multiplication);
 
 criterion_main!(
-    addition_benches,
+    // addition_benches,
     multiplication_benches,
 );
