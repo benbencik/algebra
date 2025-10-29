@@ -17,6 +17,13 @@ pub(crate) fn backend_impl(
     let r_mask = r - 1;
 
     let n_prime = mod_inverse_pow2(modulus, k_bits);
+    let n_prime_64 = n_prime as u64;
+    let mod_64 = modulus as u64;
+    let mut mask_64 = 0;
+    if modulus < u32::MAX as u128 {
+        mask_64 = (1u64 << k_bits) - 1;
+    }
+
     let one_mont = r_mod_n;
     let generator_mont = mod_mul_const(generator % modulus, r_mod_n % modulus, modulus);
 
@@ -31,7 +38,7 @@ pub(crate) fn backend_impl(
     let sqrt_precomp_impl = generate_sqrt_precomputation(modulus, two_adicity, Some(r_mod_n));
 
     // Generate multiplication implementation based on type
-    let mul_impl = generate_mul_impl(ty, modulus, k_bits, r_mask, n_prime);
+    let mul_impl = generate_mul_impl(ty, modulus, k_bits, r_mask, n_prime, n_prime_64, mod_64, mask_64);
 
     quote! {
         type T = #ty;
@@ -142,6 +149,9 @@ fn generate_mul_impl(
     k_bits: u32,
     r_mask: u128,
     n_prime: u128,
+    n_prime_64: u64,
+    mod_64: u64,
+    mask_64: u64,
 ) -> proc_macro2::TokenStream {
     let ty_str = ty.to_string();
 
@@ -184,39 +194,59 @@ fn generate_mul_impl(
                 a.value = u as Self::T;
             }
         }
-    } else {
-        let (mul_ty, bits) = match ty_str.as_str() {
-            "u8" => (quote! {u16}, 16u32),
-            "u16" => (quote! {u32}, 32u32),
-            "u32" => (quote! {u64}, 64u32),
-            _ => (quote! {u128}, 128u32),
+    } else if ty_str != "u64"{ 
+        let (mul_ty, target_back) = match ty_str.as_str() {
+            "u8" => (quote! {u64}, quote!{ u8 }),
+            "u16" => (quote! {u64}, quote!{ u16 }),
+            "u32" => (quote! {u64}, quote!{ u32 }),
+            _ => (quote! {u128}, quote!{ u64 }),
         };
 
+        quote! {
+            // mimic the approach from mul.rs for Fp
+            #[inline(always)]
+            fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                let t = (a.value as #mul_ty) * (b.value as #mul_ty);
+            
+                let k = t.wrapping_mul(#n_prime_64) & #mask_64;
+            
+                let adjusted = t + k * #mod_64;
+                let mut result = adjusted >> #k_bits;
+            
+                if result >= #mod_64 {
+                    result -= #mod_64;
+                }
+                a.value = result as #target_back;
+            }
+        }
+    } else {
+        // use the previous approach for u64
+        let mul_ty = quote! { u128 };
         let r_mask_downcast = quote! { #r_mask as #mul_ty };
         let n_prime_downcast = quote! { #n_prime as #mul_ty };
         let modulus_downcast = quote! { #modulus as #mul_ty };
         let one = quote! { 1 as #mul_ty };
-
+        
         quote! {
             #[inline(always)]
             fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
                 let a_val = a.value as #mul_ty;
                 let b_val = b.value as #mul_ty;
-
+                
                 let t = a_val * b_val;
                 let t_low = t & #r_mask_downcast;
-
+                
                 // m = t_lo * n_prime & r_mask
                 let m = t_low.wrapping_mul(#n_prime_downcast) & #r_mask_downcast;
-
+                
                 // mn = m * modulus
                 let mn = m * #modulus_downcast;
-
+                
                 // (t + mn) / R
                 let (sum, overflow) = t.overflowing_add(mn);
                 let mut u = sum >> #k_bits;
-
-                u += ((#one) << (#bits - #k_bits)) * (overflow as #mul_ty);
+                
+                u += ((#one) << (128 - #k_bits)) * (overflow as #mul_ty);
                 u -= #modulus_downcast * ((u >= #modulus_downcast) as #mul_ty);
                 a.value = u as Self::T;
             }
