@@ -43,37 +43,37 @@ pub(crate) fn small_fp_config_helper(
     let k_bits = 128 - modulus.leading_zeros();    
     let ty_str = ty.to_string();
 
-    let (mul_ty, mask) = match ty_str.as_str() {
+    let (mul_ty, mask, shift) = match ty_str.as_str() {
         "u8" => (quote! {u16}, {
             let m = (1u16 << k_bits) - 1;
             quote! { #m }
-        }),
+        }, 8),
         "u16" => (quote! {u32}, {
             let m = (1u32 << k_bits) - 1;
             quote! { #m }
-        }),
+        }, 16),
         "u32" => (quote! {u64}, {
             let m = (1u64 << k_bits) - 1;
             quote! { #m }
-        }),
+        }, 32),
         _ => (quote! {u128}, {
             let m = (1u128 << k_bits) - 1;
             quote! { #m }
-        })
+        }, 64)
     };
 
     let helper = quote! {
         #[inline(always)]
-        pub const fn mac(a: #mul_ty, b: #mul_ty, carry: &mut #mul_ty) -> #mul_ty {
+        pub const fn mac(a: #mul_ty, b: #mul_ty, carry: &mut #ty) -> #ty {
             let tmp = a * b;
-            *carry = tmp >> #k_bits;
-            (tmp & #mask)
+            *carry = (tmp >> #k_bits) as #ty;
+            (tmp & #mask) as #ty
         }
 
         #[inline(always)]
-        pub const fn mac_discard(a: #mul_ty, b: #mul_ty, c: #mul_ty, carry: &mut #mul_ty){
-            let tmp = a + (b * c);
-            *carry = tmp >> #k_bits;
+        pub const fn mac_discard(a: #ty, b: #ty, c: #ty, carry: &mut #ty){
+            let tmp = (a as #mul_ty) + ((b as #mul_ty) * (c as #mul_ty));
+            *carry = (tmp >> #k_bits) as #ty;
         }
     };
 

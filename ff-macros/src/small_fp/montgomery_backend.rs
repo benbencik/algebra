@@ -196,24 +196,24 @@ fn generate_mul_impl(
             #[inline(always)]
             fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
                 const MODULUS_MUL_TY: #mul_ty = #modulus as #mul_ty;
-                const N_PRIME: #mul_ty = #n_prime as #mul_ty;
-                const TY_MASK: #mul_ty = #ty::MAX as #mul_ty;
-
-                let mut a_val = a.value as #mul_ty;
-                let b_val = b.value as #mul_ty;
-
-                let mut carry1: #mul_ty = 0;
-                let r = Self::mac(a_val, b_val, &mut carry1);
-                let k = (r * N_PRIME) & TY_MASK;
-            
-                let mut carry2: #mul_ty = 0;
-                Self::mac_discard(r, k, MODULUS_MUL_TY, &mut carry2);
+                const MODULUS_TY: #ty = #modulus as #ty;
+                const N_PRIME: #ty = #n_prime as #ty;
                 
-                a_val = carry1 + carry2;
-                if a_val >= MODULUS_MUL_TY {
-                    a_val -= MODULUS_MUL_TY;
+                let a_val = a.value as #mul_ty;
+                let b_val = b.value as #mul_ty;
+                
+                let mut carry1: #ty = 0;
+                let r = Self::mac(a_val, b_val, &mut carry1);
+                let k = r.wrapping_mul(N_PRIME);
+                
+                let mut carry2: #ty = 0;
+                Self::mac_discard(r, k, MODULUS_TY, &mut carry2);
+
+                let mut result = (carry1 as #mul_ty) + (carry2 as #mul_ty);
+                if result >= MODULUS_MUL_TY {
+                    result -= MODULUS_MUL_TY;
                 }
-                a.value = a_val as #ty;
+                a.value = result as #ty;
             }
         }
     }
