@@ -17,7 +17,7 @@ pub type SmallF32MontM31 = SmallFp<SmallFieldMont>;
 
 #[derive(SmallFpConfig)]
 #[modulus = "2013265921"]
-#[generator = "3"]
+#[generator = "31"]
 #[backend = "montgomery"]
 pub struct SmallFieldMontBabybear;
 pub type SmallF32MontBabybear = SmallFp<SmallFieldMontBabybear>;
@@ -30,5 +30,6 @@ mod tests {
     use ark_std::vec;
 
     test_small_field!(f32; SmallF32);
-    test_small_field!(f32_mont; SmallF32MontM31);
+    test_small_field!(f32_mont_m31; SmallF32MontM31);
+    test_small_field!(f32_mont_babybear; SmallF32MontBabybear);
 }

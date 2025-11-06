@@ -15,6 +15,13 @@ pub type SmallF8 = SmallFp<SmallF8Config>;
 pub struct SmallF8ConfigMont;
 pub type SmallF8Mont = SmallFp<SmallF8ConfigMont>;
 
+#[derive(SmallFpConfig)]
+#[modulus = "127"]
+#[generator = "3"]
+#[backend = "montgomery"]
+pub struct SmallF8ConfigMontM7;
+pub type SmallF8MontM7 = SmallFp<SmallF8ConfigMontM7>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -23,4 +30,5 @@ mod tests {
 
     test_small_field!(f8; SmallF8);
     test_small_field!(f8_mont; SmallF8Mont);
+    test_small_field!(f8_mont_m7; SmallF8MontM7);
 }
