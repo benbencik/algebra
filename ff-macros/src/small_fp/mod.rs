@@ -43,23 +43,23 @@ pub(crate) fn small_fp_config_helper(
     let k_bits = 128 - modulus.leading_zeros();    
     let ty_str = ty.to_string();
 
-    let (mul_ty, mask, shift) = match ty_str.as_str() {
+    let (mul_ty, mask) = match ty_str.as_str() {
         "u8" => (quote! {u16}, {
             let m = (1u16 << k_bits) - 1;
             quote! { #m }
-        }, 8),
+        }),
         "u16" => (quote! {u32}, {
             let m = (1u32 << k_bits) - 1;
             quote! { #m }
-        }, 16),
+        }),
         "u32" => (quote! {u64}, {
             let m = (1u64 << k_bits) - 1;
             quote! { #m }
-        }, 32),
+        }),
         _ => (quote! {u128}, {
             let m = (1u128 << k_bits) - 1;
             quote! { #m }
-        }, 64)
+        })
     };
 
     let helper = quote! {

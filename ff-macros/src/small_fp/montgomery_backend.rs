@@ -1,7 +1,4 @@
 use std::u32;
-
-use num_traits::MulAddAssign;
-
 use super::*;
 use crate::small_fp::utils::{
     compute_two_adic_root_of_unity, compute_two_adicity, generate_montgomery_bigint_casts,
@@ -229,57 +226,112 @@ fn generate_mul_impl(
             }
         }
     } else if ty_str == "u32" {
-        let mul_ty = quote! {u64};
+        const M31_PRIME: u128 = 2147483647; // 2^31 - 1 (Mersenne prime)
+        
+        if modulus == M31_PRIME {
+            quote! {
+               #[inline(always)]
+                fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                    const K: u64 = 31;
+                    const MODULUS: u64 = (1u64 << K) - 1;
 
-        quote! {
-            #[inline(always)]
-            fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-                const MODULUS_MUL_TY: #mul_ty = #modulus as #mul_ty;
-                const N_PRIME: #mul_ty = #n_prime as #mul_ty;
-                const R_MASK: #mul_ty = #r_mask as #mul_ty;
+                    let prod = (a.value as u64) * (b.value as u64);
+                    let mut r = (prod & MODULUS) + (prod >> K);
 
-                let t = (a.value as #mul_ty) * (b.value as #mul_ty);
-                let k = t.wrapping_mul(N_PRIME) & R_MASK;
-                
-                let mut r = (t + (k * MODULUS_MUL_TY)) >> #k_bits;
-                if r >= MODULUS_MUL_TY {
-                   r -= MODULUS_MUL_TY;
+                    if r >= MODULUS {
+                        r -= MODULUS;
+                    }
+                    a.value = r as u32;
+                } 
+            }
+        } else {
+            quote! {
+                #[inline(always)]
+                fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                    const MODULUS_MUL_TY: u64 = #modulus as u64;
+                    const N_PRIME: u64 = #n_prime as u64;
+                    const R_MASK: u64 = #r_mask as u64;
+
+                    let t = (a.value as u64) * (b.value as u64);
+                    let k = t.wrapping_mul(N_PRIME) & R_MASK;
+                    
+                    let mut r = (t + (k * MODULUS_MUL_TY)) >> #k_bits;
+                    if r >= MODULUS_MUL_TY {
+                       r -= MODULUS_MUL_TY;
+                    }
+                    a.value = r as #ty;
                 }
-                a.value = r as #ty;
             }
         }
     } else {
         let mul_ty = match ty_str.as_str() {
             "u8" => quote! {u16},
             "u16" => quote! {u32},
-            "u32" => quote! {u64},
             _ => panic!("Unsupported type"),
         };
 
-        quote! {
-            #[inline(always)]
-            fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-                const MODULUS_MUL_TY: #mul_ty = #modulus as #mul_ty;
-                const MODULUS_TY: #ty = #modulus as #ty;
-                const N_PRIME: #ty = #n_prime as #ty;
-                
-                let a_val = a.value as #mul_ty;
-                let b_val = b.value as #mul_ty;
-                
-                let mut carry1: #ty = 0;
-                let r = Self::mac(a_val, b_val, &mut carry1);
-                let k = r.wrapping_mul(N_PRIME);
-                
-                let mut carry2: #ty = 0;
-                Self::mac_discard(r, k, MODULUS_TY, &mut carry2);
+        // Special cases for small Mersenne primes
+        const M7_PRIME: u128 = 127;
+        const M13_PRIME: u128 = 8191;
 
-                let mut r = (carry1 as #mul_ty) + (carry2 as #mul_ty);
-                if r >= MODULUS_MUL_TY {
-                    r -= MODULUS_MUL_TY;
+        if modulus == M7_PRIME {
+            quote! {
+                #[inline(always)]
+                fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                    const K: u16 = 7;
+                    const MODULUS: u16 = (1u16 << K) - 1;
+
+                    let prod = (a.value as u16) * (b.value as u16);
+                    let mut r = (prod & MODULUS) + (prod >> K);
+
+                    if r >= MODULUS {
+                        r -= MODULUS;
+                    }
+                    a.value = r as u8;
                 }
-                a.value = r as #ty;
             }
-        }  
+        } else if modulus == M13_PRIME {
+            quote! {
+                #[inline(always)]
+                fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                    const K: u32 = 13;
+                    const MODULUS: u32 = (1u32 << K) - 1;
+
+                    let prod = (a.value as u32) * (b.value as u32);
+                    let mut r = (prod & MODULUS) + (prod >> K);
+
+                    if r >= MODULUS {
+                        r -= MODULUS;
+                    }
+                    a.value = r as u16;
+                }
+            }
+        } else {
+            quote! {
+                #[inline(always)]
+                fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                    const MODULUS_MUL_TY: #mul_ty = #modulus as #mul_ty;
+                    const MODULUS_TY: #ty = #modulus as #ty;
+                    const N_PRIME: #ty = #n_prime as #ty;
+
+                    let a_val = a.value as #mul_ty;
+                    let b_val = b.value as #mul_ty;
+
+                    let mut carry1: #ty = 0;
+                    let r = Self::mac(a_val, b_val, &mut carry1);
+                    let k = r.wrapping_mul(N_PRIME);
+
+                    let mut carry2: #ty = 0;
+                    Self::mac_discard(r, k, MODULUS_TY, &mut carry2);
+
+                    let mut r = (carry1 as #mul_ty) + (carry2 as #mul_ty);
+                    if r >= MODULUS_MUL_TY {
+                        r -= MODULUS_MUL_TY;
+                    }
+                    a.value = r as #ty;
+                }
+            }
+        }
     }
 }
 
