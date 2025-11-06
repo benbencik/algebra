@@ -1,5 +1,7 @@
 use std::u32;
 
+use num_traits::MulAddAssign;
+
 use super::*;
 use crate::small_fp::utils::{
     compute_two_adic_root_of_unity, compute_two_adicity, generate_montgomery_bigint_casts,
@@ -89,13 +91,30 @@ pub(crate) fn backend_impl(
         fn sum_of_products<const T: usize>(
             a: &[SmallFp<Self>; T],
             b: &[SmallFp<Self>; T],) -> SmallFp<Self> {
-            let mut acc = SmallFp::new(0 as Self::T);
-            for (x, y) in a.iter().zip(b.iter()) {
-                let mut prod = *x;
-                Self::mul_assign(&mut prod, y);
-                Self::add_assign(&mut acc, &prod);
+            match T {
+                1 => {
+                    let mut prod = a[0];
+                    Self::mul_assign(&mut prod, &b[0]);
+                    prod
+                },
+                2 => {
+                    let mut prod1 = a[0];
+                    Self::mul_assign(&mut prod1, &b[0]);
+                    let mut prod2 = a[1];
+                    Self::mul_assign(&mut prod2, &b[1]);
+                    Self::add_assign(&mut prod1, &prod2);
+                    prod1
+                },
+                _ => {
+                    let mut acc = SmallFp::new(0 as Self::T);
+                    for (x, y) in a.iter().zip(b.iter()) {
+                        let mut prod = *x;
+                        Self::mul_assign(&mut prod, y);
+                        Self::add_assign(&mut acc, &prod);
+                    }
+                    acc
+                }
             }
-            acc
         }
 
         #[inline(always)]
@@ -144,6 +163,7 @@ fn generate_mul_impl(
     n_prime: u128,
 ) -> proc_macro2::TokenStream {
     let ty_str = ty.to_string();
+    
 
     if ty_str == "u128" {
         quote! {
@@ -184,12 +204,56 @@ fn generate_mul_impl(
                 a.value = u as Self::T;
             }
         }
+    } else if ty_str == "u64" {
+        // Use u128 for multiplication to avoid overflow when multiplying u64 values
+        
+        let mul_ty = quote! {u128};
+        let shift_bits = 128 - k_bits;
+
+        quote! {
+            #[inline(always)]
+            fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                const MODULUS_MUL_TY: #mul_ty = #modulus as #mul_ty;
+                const N_PRIME: #mul_ty = #n_prime as #mul_ty;
+                const R_MASK: #mul_ty = #r_mask as #mul_ty;
+
+                let mut t = (a.value as #mul_ty) * (b.value as #mul_ty);
+                let k = t.wrapping_mul(N_PRIME) & R_MASK;
+                let (t, overflow) = t.overflowing_add(k * MODULUS_MUL_TY);
+
+                let mut r = (t >> #k_bits) + ((overflow as #mul_ty) << #shift_bits);
+                if r >= MODULUS_MUL_TY {
+                    r -= MODULUS_MUL_TY;
+                }
+                a.value = r as #ty;
+            }
+        }
+    } else if ty_str == "u32" {
+        let mul_ty = quote! {u64};
+
+        quote! {
+            #[inline(always)]
+            fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                const MODULUS_MUL_TY: #mul_ty = #modulus as #mul_ty;
+                const N_PRIME: #mul_ty = #n_prime as #mul_ty;
+                const R_MASK: #mul_ty = #r_mask as #mul_ty;
+
+                let t = (a.value as #mul_ty) * (b.value as #mul_ty);
+                let k = t.wrapping_mul(N_PRIME) & R_MASK;
+                
+                let mut r = (t + (k * MODULUS_MUL_TY)) >> #k_bits;
+                if r >= MODULUS_MUL_TY {
+                   r -= MODULUS_MUL_TY;
+                }
+                a.value = r as #ty;
+            }
+        }
     } else {
         let mul_ty = match ty_str.as_str() {
             "u8" => quote! {u16},
             "u16" => quote! {u32},
             "u32" => quote! {u64},
-            _ => quote! {u128},
+            _ => panic!("Unsupported type"),
         };
 
         quote! {
@@ -209,13 +273,13 @@ fn generate_mul_impl(
                 let mut carry2: #ty = 0;
                 Self::mac_discard(r, k, MODULUS_TY, &mut carry2);
 
-                let mut result = (carry1 as #mul_ty) + (carry2 as #mul_ty);
-                if result >= MODULUS_MUL_TY {
-                    result -= MODULUS_MUL_TY;
+                let mut r = (carry1 as #mul_ty) + (carry2 as #mul_ty);
+                if r >= MODULUS_MUL_TY {
+                    r -= MODULUS_MUL_TY;
                 }
-                a.value = result as #ty;
+                a.value = r as #ty;
             }
-        }
+        }  
     }
 }
 
