@@ -40,44 +40,6 @@ pub(crate) fn small_fp_config_helper(
         _ => panic!("Unknown backend type: {}", backend),
     };
 
-    let k_bits = 128 - modulus.leading_zeros();    
-    let ty_str = ty.to_string();
-
-    let (mul_ty, mask) = match ty_str.as_str() {
-        "u8" => (quote! {u16}, {
-            let m = (1u16 << k_bits) - 1;
-            quote! { #m }
-        }),
-        "u16" => (quote! {u32}, {
-            let m = (1u32 << k_bits) - 1;
-            quote! { #m }
-        }),
-        "u32" => (quote! {u64}, {
-            let m = (1u64 << k_bits) - 1;
-            quote! { #m }
-        }),
-        _ => (quote! {u128}, {
-            let m = (1u128 << k_bits) - 1;
-            quote! { #m }
-        })
-    };
-
-    let helper = quote! {
-        #[inline(always)]
-        pub const fn mac(a: #mul_ty, b: #mul_ty, carry: &mut #ty) -> #ty {
-            let tmp = a * b;
-            *carry = (tmp >> #k_bits) as #ty;
-            (tmp & #mask) as #ty
-        }
-
-        #[inline(always)]
-        pub const fn mac_discard(a: #ty, b: #ty, c: #ty, carry: &mut #ty){
-            let tmp = (a as #mul_ty) + ((b as #mul_ty) * (c as #mul_ty));
-            *carry = (tmp >> #k_bits) as #ty;
-        }
-    };
-
-
     quote! {
         impl SmallFpConfig for #config_name {
             #backend_impl
@@ -85,8 +47,6 @@ pub(crate) fn small_fp_config_helper(
 
         impl #config_name {
             #new_impl
-
-            #helper
         }
     }
 }

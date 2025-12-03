@@ -151,7 +151,7 @@ pub(crate) fn backend_impl(
 
 // Selects the appropriate multiplication algorithm at compile time:
 // if modulus <= u64, multiply by casting to the next largest primitive
-// otherwise, multiply in parts to form a 256-bit product before reduction
+// otherwise, multiply in parts to form a 256-bit product
 fn generate_mul_impl(
     ty: &proc_macro2::TokenStream,
     modulus: u128,
@@ -160,192 +160,236 @@ fn generate_mul_impl(
     n_prime: u128,
 ) -> proc_macro2::TokenStream {
     let ty_str = ty.to_string();
-    
 
-    if ty_str == "u128" {
-        let modulus_lo = modulus & 0xFFFFFFFFFFFFFFFF;
-        let modulus_hi = modulus >> 64;
-        let shift_back = 128 - k_bits;
-        
-        quote! {
-            #[inline(always)]
-            fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-                const MODULUS_LO: u128 = #modulus_lo;
-                const MODULUS_HI: u128 = #modulus_hi;
-                const R_MASK: u128 = #r_mask;
-                const N_PRIME: u128 = #n_prime;
-                
-                // 256-bit result stored as lo, hi
-                // t = a * b
-                let a_lo = a.value & 0xFFFFFFFFFFFFFFFF;
-                let a_hi = a.value >> 64;
-                let b_lo = b.value & 0xFFFFFFFFFFFFFFFF;
-                let b_hi = b.value >> 64;
-                
-                let lolo = a_lo * b_lo;
-                let lohi = a_lo * b_hi;
-                let hilo = a_hi * b_lo;
-                let hihi = a_hi * b_hi;
+    match ty_str.as_str() {
+        "u128" => generate_u128_mul(modulus, k_bits, r_mask, n_prime),
+        "u64" => generate_u64_mul(modulus, k_bits, r_mask, n_prime),
+        "u32" => generate_u32_mul(modulus, k_bits, r_mask, n_prime),
+        "u8" | "u16" => generate_small_mul(ty, ty_str.as_str(), modulus, k_bits, r_mask, n_prime),
+        _ => panic!("Unsupported type: {}", ty_str),
+    }
+}
 
-                let (cross_sum, cross_carry) = lohi.overflowing_add(hilo);
-                let (t_lo, mid_carry) = lolo.overflowing_add(cross_sum << 64);
-                let t_hi = hihi + ((cross_sum >> 64) | ((cross_carry as u128) << 64)) + (mid_carry as u128);
+/// Generates 128-bit multiplication using manual 256-bit arithmetic
+fn generate_u128_mul(
+    modulus: u128,
+    k_bits: u32,
+    r_mask: u128,
+    n_prime: u128,
+) -> proc_macro2::TokenStream {
+    let modulus_lo = modulus & 0xFFFFFFFFFFFFFFFF;
+    let modulus_hi = modulus >> 64;
+    let shift_back = 128 - k_bits;
 
-                // m = t_lo * n_prime & r_mask
-                let m = t_lo.wrapping_mul(N_PRIME) & R_MASK;
+    quote! {
+        #[inline(always)]
+        fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+            const MODULUS_LO: u128 = #modulus_lo;
+            const MODULUS_HI: u128 = #modulus_hi;
+            const R_MASK: u128 = #r_mask;
+            const N_PRIME: u128 = #n_prime;
 
-                // mn = m * modulus
-                let m_lo = m & 0xFFFFFFFFFFFFFFFF;
-                let m_hi = m >> 64;
-                
-                let lolo = m_lo * MODULUS_LO;
-                let lohi = m_lo * MODULUS_HI;
-                let hilo = m_hi * MODULUS_LO;
-                let hihi = m_hi * MODULUS_HI;
+            // 256-bit result stored as lo, hi
+            // t = a * b
+            let a_lo = a.value & 0xFFFFFFFFFFFFFFFF;
+            let a_hi = a.value >> 64;
+            let b_lo = b.value & 0xFFFFFFFFFFFFFFFF;
+            let b_hi = b.value >> 64;
 
-                let (cross_sum, cross_carry) = lohi.overflowing_add(hilo);
-                let (mn_lo, mid_carry) = lolo.overflowing_add(cross_sum << 64);
-                let mn_hi = hihi + ((cross_sum >> 64) | ((cross_carry as u128) << 64)) + (mid_carry as u128);
+            let lolo = a_lo * b_lo;
+            let lohi = a_lo * b_hi;
+            let hilo = a_hi * b_lo;
+            let hihi = a_hi * b_hi;
 
-                // (t + mn) / R
-                let (sum_lo, carry) = t_lo.overflowing_add(mn_lo);
-                let sum_hi = t_hi + mn_hi + (carry as u128);
+            let (cross_sum, cross_carry) = lohi.overflowing_add(hilo);
+            let (t_lo, mid_carry) = lolo.overflowing_add(cross_sum << 64);
+            let t_hi = hihi + ((cross_sum >> 64) | ((cross_carry as u128) << 64)) + (mid_carry as u128);
 
-                let mut u = (sum_lo >> #k_bits) | (sum_hi << #shift_back);
-                u -= #modulus * (u >= #modulus) as u128;
-                a.value = u;
-            }
+            // m = t_lo * n_prime & r_mask
+            let m = t_lo.wrapping_mul(N_PRIME) & R_MASK;
+
+            // mn = m * modulus
+            let m_lo = m & 0xFFFFFFFFFFFFFFFF;
+            let m_hi = m >> 64;
+
+            let lolo = m_lo * MODULUS_LO;
+            let lohi = m_lo * MODULUS_HI;
+            let hilo = m_hi * MODULUS_LO;
+            let hihi = m_hi * MODULUS_HI;
+
+            let (cross_sum, cross_carry) = lohi.overflowing_add(hilo);
+            let (mn_lo, mid_carry) = lolo.overflowing_add(cross_sum << 64);
+            let mn_hi = hihi + ((cross_sum >> 64) | ((cross_carry as u128) << 64)) + (mid_carry as u128);
+
+            // (t + mn) / R
+            let (sum_lo, carry) = t_lo.overflowing_add(mn_lo);
+            let sum_hi = t_hi + mn_hi + (carry as u128);
+
+            let mut u = (sum_lo >> #k_bits) | (sum_hi << #shift_back);
+            u -= #modulus * (u >= #modulus) as u128;
+            a.value = u;
         }
-    } else if ty_str == "u64" {
-        // Use u128 for multiplication to avoid overflow when multiplying u64 values
-        
-        let mul_ty = quote! {u128};
-        let shift_bits = 128 - k_bits;
+    }
+}
 
-        quote! {
-            #[inline(always)]
-            fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-                const MODULUS_MUL_TY: #mul_ty = #modulus as #mul_ty;
-                const N_PRIME: #mul_ty = #n_prime as #mul_ty;
-                const R_MASK: #mul_ty = #r_mask as #mul_ty;
+/// Generates 64-bit multiplication using u128 for intermediate results
+fn generate_u64_mul(
+    modulus: u128,
+    k_bits: u32,
+    r_mask: u128,
+    n_prime: u128,
+) -> proc_macro2::TokenStream {
+    // Use u128 for multiplication to avoid overflow when multiplying u64 values
+    let shift_bits = 128 - k_bits;
 
-                let mut t = (a.value as #mul_ty) * (b.value as #mul_ty);
-                let k = t.wrapping_mul(N_PRIME) & R_MASK;
-                let (t, overflow) = t.overflowing_add(k * MODULUS_MUL_TY);
+    quote! {
+        #[inline(always)]
+        fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+            const MODULUS_MUL_TY: u128 = #modulus as u128;
+            const N_PRIME: u128 = #n_prime as u128;
+            const R_MASK: u128 = #r_mask as u128;
 
-                let mut r = (t >> #k_bits) + ((overflow as #mul_ty) << #shift_bits);
-                if r >= MODULUS_MUL_TY {
-                    r -= MODULUS_MUL_TY;
-                }
-                a.value = r as #ty;
+            let mut t = (a.value as u128) * (b.value as u128);
+            let k = t.wrapping_mul(N_PRIME) & R_MASK;
+            let (t, overflow) = t.overflowing_add(k * MODULUS_MUL_TY);
+
+            let mut r = (t >> #k_bits) + ((overflow as u128) << #shift_bits);
+            if r >= MODULUS_MUL_TY {
+                r -= MODULUS_MUL_TY;
             }
+            a.value = r as u64;
         }
-    } else if ty_str == "u32" {
-        const M31_PRIME: u128 = 2147483647; // 2^31 - 1 (Mersenne prime)
-        
-        if modulus == M31_PRIME {
-            quote! {
-               #[inline(always)]
-                fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-                    const K: u64 = 31;
-                    const MODULUS: u64 = (1u64 << K) - 1;
+    }
+}
 
-                    let prod = (a.value as u64) * (b.value as u64);
-                    let mut r = (prod & MODULUS) + (prod >> K);
+/// Generates 32-bit multiplication with optional Mersenne prime optimization
+fn generate_u32_mul(
+    modulus: u128,
+    k_bits: u32,
+    r_mask: u128,
+    n_prime: u128,
+) -> proc_macro2::TokenStream {
+    const M31_PRIME: u128 = 2147483647; // 2^31 - 1 (Mersenne prime)
 
-                    if r >= MODULUS {
-                        r -= MODULUS;
-                    }
-                    a.value = r as u32;
-                } 
-            }
-        } else {
-            quote! {
-                #[inline(always)]
-                fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-                    const MODULUS_MUL_TY: u64 = #modulus as u64;
-                    const N_PRIME: u64 = #n_prime as u64;
-                    const R_MASK: u64 = #r_mask as u64;
+    if modulus == M31_PRIME {
+        quote! {
+           #[inline(always)]
+            fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                const K: u64 = 31;
+                const MODULUS: u64 = (1u64 << K) - 1;
 
-                    let t = (a.value as u64) * (b.value as u64);
-                    let k = t.wrapping_mul(N_PRIME) & R_MASK;
-                    
-                    let mut r = (t + (k * MODULUS_MUL_TY)) >> #k_bits;
-                    if r >= MODULUS_MUL_TY {
-                       r -= MODULUS_MUL_TY;
-                    }
-                    a.value = r as #ty;
+                let prod = (a.value as u64) * (b.value as u64);
+                let mut r = (prod & MODULUS) + (prod >> K);
+
+                if r >= MODULUS {
+                    r -= MODULUS;
                 }
+                a.value = r as u32;
             }
         }
     } else {
-        let mul_ty = match ty_str.as_str() {
-            "u8" => quote! {u16},
-            "u16" => quote! {u32},
-            _ => panic!("Unsupported type"),
+        quote! {
+            #[inline(always)]
+            fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                const MODULUS_MUL_TY: u64 = #modulus as u64;
+                const N_PRIME: u64 = #n_prime as u64;
+                const R_MASK: u64 = #r_mask as u64;
+
+                let t = (a.value as u64) * (b.value as u64);
+                let k = t.wrapping_mul(N_PRIME) & R_MASK;
+
+                let mut r = (t + (k * MODULUS_MUL_TY)) >> #k_bits;
+                if r >= MODULUS_MUL_TY {
+                   r -= MODULUS_MUL_TY;
+                }
+                a.value = r as u32;
+            }
+        }
+    }
+}
+
+fn generate_small_mul(
+    ty: &proc_macro2::TokenStream,
+    ty_str: &str,
+    modulus: u128,
+    k_bits: u32,
+    r_mask: u128,
+    n_prime: u128,
+) -> proc_macro2::TokenStream {
+    const M7_PRIME: u128 = 127; // 2^7 - 1
+    const M13_PRIME: u128 = 8191; // 2^13 - 1
+
+    if modulus == M7_PRIME {
+        return quote! {
+            #[inline(always)]
+            fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                const K: u16 = 7;
+                const MODULUS: u16 = (1u16 << K) - 1;
+
+                let prod = (a.value as u16) * (b.value as u16);
+                let mut r = (prod & MODULUS) + (prod >> K);
+
+                if r >= MODULUS {
+                    r -= MODULUS;
+                }
+                a.value = r as u8;
+            }
         };
+    }
 
-        // Special cases for small Mersenne primes
-        const M7_PRIME: u128 = 127;
-        const M13_PRIME: u128 = 8191;
+    if modulus == M13_PRIME {
+        return quote! {
+            #[inline(always)]
+            fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                const K: u32 = 13;
+                const MODULUS: u32 = (1u32 << K) - 1;
 
-        if modulus == M7_PRIME {
-            quote! {
-                #[inline(always)]
-                fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-                    const K: u16 = 7;
-                    const MODULUS: u16 = (1u16 << K) - 1;
+                let prod = (a.value as u32) * (b.value as u32);
+                let mut r = (prod & MODULUS) + (prod >> K);
 
-                    let prod = (a.value as u16) * (b.value as u16);
-                    let mut r = (prod & MODULUS) + (prod >> K);
-
-                    if r >= MODULUS {
-                        r -= MODULUS;
-                    }
-                    a.value = r as u8;
+                if r >= MODULUS {
+                    r -= MODULUS;
                 }
+                a.value = r as u16;
             }
-        } else if modulus == M13_PRIME {
-            quote! {
-                #[inline(always)]
-                fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-                    const K: u32 = 13;
-                    const MODULUS: u32 = (1u32 << K) - 1;
+        };
+    }
 
-                    let prod = (a.value as u32) * (b.value as u32);
-                    let mut r = (prod & MODULUS) + (prod >> K);
+    let mul_ty = match ty_str {
+        "u8" => quote! { u16 },
+        "u16" => quote! { u32 },
+        _ => unreachable!(),
+    };
 
-                    if r >= MODULUS {
-                        r -= MODULUS;
-                    }
-                    a.value = r as u16;
-                }
+    quote! {
+        #[inline(always)]
+        fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+            const MODULUS_MUL_TY: #mul_ty = #modulus as #mul_ty;
+            const MODULUS_TY: #ty = #modulus as #ty;
+            const N_PRIME: #ty = #n_prime as #ty;
+            const MASK: #mul_ty = #r_mask as #mul_ty;
+            const K_BITS: u32 = #k_bits;
+
+            let a_val = a.value as #mul_ty;
+            let b_val = b.value as #mul_ty;
+
+            // Compute t = a * b and extract high/low parts
+            let tmp = a_val * b_val;
+            let carry1 = (tmp >> K_BITS) as #ty;
+            let r = (tmp & MASK) as #ty;
+
+            // Montgomery reduction
+            let m = r.wrapping_mul(N_PRIME);
+
+            // Compute (r + m * modulus) and extract high part
+            let tmp = (r as #mul_ty) + ((m as #mul_ty) * MODULUS_MUL_TY);
+            let carry2 = (tmp >> K_BITS) as #ty;
+
+            let mut r = (carry1 as #mul_ty) + (carry2 as #mul_ty);
+            if r >= MODULUS_MUL_TY {
+                r -= MODULUS_MUL_TY;
             }
-        } else {
-            quote! {
-                #[inline(always)]
-                fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-                    const MODULUS_MUL_TY: #mul_ty = #modulus as #mul_ty;
-                    const MODULUS_TY: #ty = #modulus as #ty;
-                    const N_PRIME: #ty = #n_prime as #ty;
-
-                    let a_val = a.value as #mul_ty;
-                    let b_val = b.value as #mul_ty;
-
-                    let mut carry1: #ty = 0;
-                    let r = Self::mac(a_val, b_val, &mut carry1);
-                    let k = r.wrapping_mul(N_PRIME);
-
-                    let mut carry2: #ty = 0;
-                    Self::mac_discard(r, k, MODULUS_TY, &mut carry2);
-
-                    let mut r = (carry1 as #mul_ty) + (carry2 as #mul_ty);
-                    if r >= MODULUS_MUL_TY {
-                        r -= MODULUS_MUL_TY;
-                    }
-                    a.value = r as #ty;
-                }
-            }
+            a.value = r as #ty;
         }
     }
 }
