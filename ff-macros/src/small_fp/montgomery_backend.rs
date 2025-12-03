@@ -163,42 +163,57 @@ fn generate_mul_impl(
     
 
     if ty_str == "u128" {
+        let modulus_lo = modulus & 0xFFFFFFFFFFFFFFFF;
+        let modulus_hi = modulus >> 64;
+        let shift_back = 128 - k_bits;
+        
         quote! {
             #[inline(always)]
             fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                const MODULUS_LO: u128 = #modulus_lo;
+                const MODULUS_HI: u128 = #modulus_hi;
+                const R_MASK: u128 = #r_mask;
+                const N_PRIME: u128 = #n_prime;
+                
                 // 256-bit result stored as lo, hi
                 // t = a * b
-                let lolo = (a.value & 0xFFFFFFFFFFFFFFFF) * (b.value & 0xFFFFFFFFFFFFFFFF);
-                let lohi = (a.value & 0xFFFFFFFFFFFFFFFF) * (b.value >> 64);
-                let hilo = (a.value >> 64) * (b.value & 0xFFFFFFFFFFFFFFFF);
-                let hihi = (a.value >> 64) * (b.value >> 64);
+                let a_lo = a.value & 0xFFFFFFFFFFFFFFFF;
+                let a_hi = a.value >> 64;
+                let b_lo = b.value & 0xFFFFFFFFFFFFFFFF;
+                let b_hi = b.value >> 64;
+                
+                let lolo = a_lo * b_lo;
+                let lohi = a_lo * b_hi;
+                let hilo = a_hi * b_lo;
+                let hihi = a_hi * b_hi;
 
                 let (cross_sum, cross_carry) = lohi.overflowing_add(hilo);
-                let (mid, mid_carry) = lolo.overflowing_add(cross_sum << 64);
-                let t_lo = mid;
-                let t_hi = hihi + (cross_sum >> 64) + ((cross_carry as u128) << 64) + (mid_carry as u128);
+                let (t_lo, mid_carry) = lolo.overflowing_add(cross_sum << 64);
+                let t_hi = hihi + ((cross_sum >> 64) | ((cross_carry as u128) << 64)) + (mid_carry as u128);
 
                 // m = t_lo * n_prime & r_mask
-                let m = t_lo.wrapping_mul(#n_prime) & #r_mask;
+                let m = t_lo.wrapping_mul(N_PRIME) & R_MASK;
 
                 // mn = m * modulus
-                let lolo = (m & 0xFFFFFFFFFFFFFFFF) * (#modulus & 0xFFFFFFFFFFFFFFFF);
-                let lohi = (m & 0xFFFFFFFFFFFFFFFF) * (#modulus >> 64);
-                let hilo = (m >> 64) * (#modulus & 0xFFFFFFFFFFFFFFFF);
-                let hihi = (m >> 64) * (#modulus >> 64);
+                let m_lo = m & 0xFFFFFFFFFFFFFFFF;
+                let m_hi = m >> 64;
+                
+                let lolo = m_lo * MODULUS_LO;
+                let lohi = m_lo * MODULUS_HI;
+                let hilo = m_hi * MODULUS_LO;
+                let hihi = m_hi * MODULUS_HI;
 
                 let (cross_sum, cross_carry) = lohi.overflowing_add(hilo);
-                let (mid, mid_carry) = lolo.overflowing_add(cross_sum << 64);
-                let mn_lo = mid;
-                let mn_hi = hihi + (cross_sum >> 64) + ((cross_carry as u128) << 64) + (mid_carry as u128);
+                let (mn_lo, mid_carry) = lolo.overflowing_add(cross_sum << 64);
+                let mn_hi = hihi + ((cross_sum >> 64) | ((cross_carry as u128) << 64)) + (mid_carry as u128);
 
                 // (t + mn) / R
                 let (sum_lo, carry) = t_lo.overflowing_add(mn_lo);
                 let sum_hi = t_hi + mn_hi + (carry as u128);
 
-                let mut u = (sum_lo >> #k_bits) | (sum_hi << (128 - #k_bits));
+                let mut u = (sum_lo >> #k_bits) | (sum_hi << #shift_back);
                 u -= #modulus * (u >= #modulus) as u128;
-                a.value = u as Self::T;
+                a.value = u;
             }
         }
     } else if ty_str == "u64" {
