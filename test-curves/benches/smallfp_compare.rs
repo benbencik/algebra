@@ -1,6 +1,5 @@
 use ark_algebra_bench_templates::*;
-use ark_ff::fields::{Fp128, Fp64, MontBackend, MontConfig};
-use ark_ff::{Field, UniformRand};
+use ark_ff::{Fp128, Fp64, MontBackend, MontConfig, Field, UniformRand};
 use ark_test_curves::{
     smallfp128::SmallF128Mont,
     smallfp64::SmallF64MontGoldilock,
@@ -186,7 +185,7 @@ criterion_group!(multiplication_benches, bench_multiplication);
 criterion_group!(inverse_benches, bench_inverse);
 
 criterion_main!(
-    addition_benches,
+    // addition_benches,
     multiplication_benches,
-    inverse_benches,
+    // inverse_benches,
 );

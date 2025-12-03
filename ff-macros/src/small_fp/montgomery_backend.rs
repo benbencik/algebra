@@ -170,7 +170,6 @@ fn generate_mul_impl(
     }
 }
 
-/// Generates 128-bit multiplication using manual 256-bit arithmetic
 fn generate_u128_mul(
     modulus: u128,
     k_bits: u32,
@@ -232,7 +231,6 @@ fn generate_u128_mul(
     }
 }
 
-/// Generates 64-bit multiplication using u128 for intermediate results
 fn generate_u64_mul(
     modulus: u128,
     k_bits: u32,
@@ -262,14 +260,13 @@ fn generate_u64_mul(
     }
 }
 
-/// Generates 32-bit multiplication with optional Mersenne prime optimization
 fn generate_u32_mul(
     modulus: u128,
     k_bits: u32,
     r_mask: u128,
     n_prime: u128,
 ) -> proc_macro2::TokenStream {
-    const M31_PRIME: u128 = 2147483647; // 2^31 - 1 (Mersenne prime)
+    const M31_PRIME: u128 = 2147483647; // 2^31 - 1
 
     if modulus == M31_PRIME {
         quote! {
@@ -320,7 +317,7 @@ fn generate_small_mul(
     const M13_PRIME: u128 = 8191; // 2^13 - 1
 
     if modulus == M7_PRIME {
-        return quote! {
+        quote! {
             #[inline(always)]
             fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
                 const K: u16 = 7;
@@ -334,11 +331,9 @@ fn generate_small_mul(
                 }
                 a.value = r as u8;
             }
-        };
-    }
-
-    if modulus == M13_PRIME {
-        return quote! {
+        }
+    } else if modulus == M13_PRIME {
+        quote! {
             #[inline(always)]
             fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
                 const K: u32 = 13;
@@ -352,44 +347,40 @@ fn generate_small_mul(
                 }
                 a.value = r as u16;
             }
+        }
+    } else {
+        let mul_ty = match ty_str {
+            "u8" => quote! { u16 },
+            "u16" => quote! { u32 },
+            _ => unreachable!(),
         };
-    }
 
-    let mul_ty = match ty_str {
-        "u8" => quote! { u16 },
-        "u16" => quote! { u32 },
-        _ => unreachable!(),
-    };
-
-    quote! {
-        #[inline(always)]
-        fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-            const MODULUS_MUL_TY: #mul_ty = #modulus as #mul_ty;
-            const MODULUS_TY: #ty = #modulus as #ty;
-            const N_PRIME: #ty = #n_prime as #ty;
-            const MASK: #mul_ty = #r_mask as #mul_ty;
-            const K_BITS: u32 = #k_bits;
-
-            let a_val = a.value as #mul_ty;
-            let b_val = b.value as #mul_ty;
-
-            // Compute t = a * b and extract high/low parts
-            let tmp = a_val * b_val;
-            let carry1 = (tmp >> K_BITS) as #ty;
-            let r = (tmp & MASK) as #ty;
-
-            // Montgomery reduction
-            let m = r.wrapping_mul(N_PRIME);
-
-            // Compute (r + m * modulus) and extract high part
-            let tmp = (r as #mul_ty) + ((m as #mul_ty) * MODULUS_MUL_TY);
-            let carry2 = (tmp >> K_BITS) as #ty;
-
-            let mut r = (carry1 as #mul_ty) + (carry2 as #mul_ty);
-            if r >= MODULUS_MUL_TY {
-                r -= MODULUS_MUL_TY;
+        quote! {
+            #[inline(always)]
+            fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
+                const MODULUS_MUL_TY: #mul_ty = #modulus as #mul_ty;
+                const MODULUS_TY: #ty = #modulus as #ty;
+                const N_PRIME: #ty = #n_prime as #ty;
+                const MASK: #mul_ty = #r_mask as #mul_ty;
+                const K_BITS: u32 = #k_bits;
+    
+                let a_val = a.value as #mul_ty;
+                let b_val = b.value as #mul_ty;
+    
+                let tmp = a_val * b_val;
+                let carry1 = (tmp >> K_BITS) as #ty;
+                let r = (tmp & MASK) as #ty;
+                let m = r.wrapping_mul(N_PRIME);
+    
+                let tmp = (r as #mul_ty) + ((m as #mul_ty) * MODULUS_MUL_TY);
+                let carry2 = (tmp >> K_BITS) as #ty;
+    
+                let mut r = (carry1 as #mul_ty) + (carry2 as #mul_ty);
+                if r >= MODULUS_MUL_TY {
+                    r -= MODULUS_MUL_TY;
+                }
+                a.value = r as #ty;
             }
-            a.value = r as #ty;
         }
     }
 }

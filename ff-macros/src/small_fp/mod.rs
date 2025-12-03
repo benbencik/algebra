@@ -41,12 +41,16 @@ pub(crate) fn small_fp_config_helper(
     };
 
     quote! {
-        impl SmallFpConfig for #config_name {
-            #backend_impl
-        }
+        const _: () = {
+            use ark_ff::{SmallFp, SmallFpConfig};
 
-        impl #config_name {
-            #new_impl
-        }
+            impl SmallFpConfig for #config_name {
+                #backend_impl
+            }
+
+            impl #config_name {
+                #new_impl
+            }
+        };
     }
 }

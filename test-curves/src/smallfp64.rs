@@ -1,5 +1,4 @@
-use ark_ff::ark_ff_macros::SmallFpConfig;
-use ark_ff::{BigInt, SmallFp, SmallFpConfig, SqrtPrecomputation};
+use ark_ff::{SmallFp, SmallFpConfig};
 
 #[derive(SmallFpConfig)]
 #[modulus = "18446744069414584321"] // Goldilock's prime 2^64 - 2^32 + 1

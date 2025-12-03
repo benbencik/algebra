@@ -1,12 +1,9 @@
 use ark_algebra_bench_templates::*;
-use ark_ff::fields::{Fp64, MontBackend, MontConfig};
+use ark_ff::fields::{Fp64, MontBackend, MontConfig, SmallFp, SmallFpConfig};
 use ark_test_curves::{
     smallfp32::{SmallF32MontM31},
     smallfp64::{SmallF64MontGoldilock},
 };
-
-use ark_ff::ark_ff_macros::SmallFpConfig;
-use ark_ff::{BigInt, SmallFp, SmallFpConfig, SqrtPrecomputation};
 
 
 #[derive(MontConfig)]
