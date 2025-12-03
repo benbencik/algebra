@@ -1,18 +1,14 @@
 use ark_algebra_bench_templates::*;
 use ark_ff::fields::{Fp128, Fp64, MontBackend, MontConfig};
 use ark_ff::{Field, UniformRand};
-use ark_test_curves::smallfp128;
 use ark_test_curves::{
     smallfp128::SmallF128Mont,
     smallfp64::SmallF64MontGoldilock,
     smallfp32::{SmallF32MontBabybear, SmallF32MontM31},
-    smallfp16::{SmallF16Mont, SmallF16MontM13},
-    smallfp8::{SmallF8Mont, SmallF8MontM7},
+    smallfp16::SmallF16Mont,
+    smallfp8::SmallF8MontM7,
 };
 use criterion::BenchmarkGroup;
-
-use ark_ff::ark_ff_macros::SmallFpConfig;
-use ark_ff::{BigInt, SmallFp, SmallFpConfig, SqrtPrecomputation};
 
 #[derive(MontConfig)]
 #[modulus = "143244528689204659050391023439224324689"]
@@ -51,12 +47,6 @@ pub struct F16ConfigM13;
 pub type F16M13 = Fp64<MontBackend<F16ConfigM13, 1>>;
 
 #[derive(MontConfig)]
-#[modulus = "251"]
-#[generator = "6"]
-pub struct F8Config;
-pub type F8Generic = Fp64<MontBackend<F8Config, 1>>;
-
-#[derive(MontConfig)]
 #[modulus = "127"]
 #[generator = "3"]
 pub struct F8ConfigM7;
@@ -83,7 +73,7 @@ fn bench_add<'a, F: Field + Copy, M: criterion::measurement::Measurement>(
 fn bench_mul<'a, F: Field + Copy, M: criterion::measurement::Measurement>(
     group: &mut BenchmarkGroup<'a, M>,
     name: &str,
-    arr: &[F],
+    arr: &mut [F],
     arr2: &[F],
 ) {
     let samples = arr.len();
@@ -92,8 +82,8 @@ fn bench_mul<'a, F: Field + Copy, M: criterion::measurement::Measurement>(
         b.iter(|| {
             i = (i + 1) % samples;
             let mut tmp = arr[i];
-            tmp *= arr2[i];
-            std::hint::black_box(tmp);
+            tmp.mul_assign(&arr2[i]);
+            tmp
         })
     });
 }
@@ -109,42 +99,27 @@ fn bench_inv<'a, F: Field + Copy, M: criterion::measurement::Measurement>(
         let mut i = 0;
         b.iter(|| {
             i = (i + 1) % samples;
-            arr[i].inverse().unwrap()
+            arr[i].inverse()
         })
     });
 }
 
-fn bench_sqrt<'a, F: Field + Copy, M: criterion::measurement::Measurement>(
-    group: &mut BenchmarkGroup<'a, M>,
-    name: &str,
-    arr: &[F],
-    _arr2: &[F],
-) {
-    let samples = arr.len();
-    group.bench_function(name, |b| {
-        let mut i = 0;
-        b.iter(|| {
-            i = (i + 1) % samples;
-            let _ = arr[i].sqrt();
-        })
-    });
-}
 
 macro_rules! bench_operations {
     ($group:expr, $samples:expr, $rng:expr, $bench_fn:ident, $($name:expr, $small_ty:ty, $large_ty:ty),* $(,)?) => {
         $(
-            let arr = (0..$samples).map(|_| <$small_ty>::rand(&mut $rng)).collect::<Vec<_>>();
+            let mut arr = (0..$samples).map(|_| <$small_ty>::rand(&mut $rng)).collect::<Vec<_>>();
             let arr_2 = (0..$samples).map(|_| <$small_ty>::rand(&mut $rng)).collect::<Vec<_>>();
-            let fp_arr = (0..$samples).map(|_| <$large_ty>::rand(&mut $rng)).collect::<Vec<_>>();
+            let mut fp_arr = (0..$samples).map(|_| <$large_ty>::rand(&mut $rng)).collect::<Vec<_>>();
             let fp_arr_2 = (0..$samples).map(|_| <$large_ty>::rand(&mut $rng)).collect::<Vec<_>>();
-            $bench_fn(&mut $group, &format!("{}-{}", $name, stringify!($large_ty)), &fp_arr, &fp_arr_2);
-            $bench_fn(&mut $group, &format!("{}-{}", $name, stringify!($small_ty)), &arr, &arr_2);
+            $bench_fn(&mut $group, &format!("{}-{}", $name, stringify!($large_ty)), &mut fp_arr, &fp_arr_2);
+            $bench_fn(&mut $group, &format!("{}-{}", $name, stringify!($small_ty)), &mut arr, &arr_2);
         )*
     };
 }
 
 fn bench_addition(c: &mut criterion::Criterion) {
-    const SAMPLES: usize = 100_000;
+    const SAMPLES: usize = 1_000_000;
     let mut rng = ark_std::test_rng();
     let mut group = c.benchmark_group("Add");
 
@@ -153,14 +128,12 @@ fn bench_addition(c: &mut criterion::Criterion) {
         SAMPLES,
         rng,
         bench_add,
-        "00", SmallF8Mont, F8Generic,
         "01", SmallF8MontM7, F8M7,
         "02", SmallF16Mont, F16Generic,
-        "03", SmallF16MontM13, F16M13,
-        "04", SmallF32MontM31, F32M31,
-        "05", SmallF32MontBabybear, F32Babybear,
-        "06", SmallF64MontGoldilock, F64Goldilocks,
-        "07", SmallF128Mont, F128Generic,
+        "03", SmallF32MontM31, F32M31,
+        "04", SmallF32MontBabybear, F32Babybear,
+        "05", SmallF64MontGoldilock, F64Goldilocks,
+        "06", SmallF128Mont, F128Generic,
     );
 
     group.finish();
@@ -176,19 +149,19 @@ fn bench_multiplication(c: &mut criterion::Criterion) {
         SAMPLES,
         rng,
         bench_mul,
-        "00", SmallF8Mont, F8Generic,
-        "01", SmallF16Mont, F16Generic,
-        "02", SmallF32MontM31, F32M31,
-        "03", SmallF32MontBabybear, F32Babybear,
-        "04", SmallF64MontGoldilock, F64Goldilocks,
-        // "05", SmallF128Mont, F128Generic,
+        "01", SmallF8MontM7, F8M7,
+        "02", SmallF16Mont, F16Generic,
+        "03", SmallF32MontM31, F32M31,
+        "04", SmallF32MontBabybear, F32Babybear,
+        "05", SmallF64MontGoldilock, F64Goldilocks,
+        "06", SmallF128Mont, F128Generic,
     );
 
     group.finish();
 }
 
 fn bench_inverse(c: &mut criterion::Criterion) {
-    const SAMPLES: usize = 1000;
+    const SAMPLES: usize = 1_000_000;
     let mut rng = ark_std::test_rng();
     let mut group = c.benchmark_group("Inv");
 
@@ -197,33 +170,12 @@ fn bench_inverse(c: &mut criterion::Criterion) {
         SAMPLES,
         rng,
         bench_inv,
-        "00", SmallF8Mont, F8Generic,
-        "01", SmallF16Mont, F16Generic,
-        "02", SmallF32MontM31, F32M31,
-        "03", SmallF32MontBabybear, F32Babybear,
-        "04", SmallF64MontGoldilock, F64Goldilocks,
-        // "05", SmallF128Mont, F128,
-    );
-
-    group.finish();
-}
-
-fn bench_sqrt_all(c: &mut criterion::Criterion) {
-    const SAMPLES: usize = 10_000;
-    let mut rng = ark_std::test_rng();
-    let mut group = c.benchmark_group("Sqrt");
-
-    bench_operations!(
-        group,
-        SAMPLES,
-        rng,
-        bench_sqrt,
-        "00", SmallF8Mont, F8Generic,
-        "01", SmallF16Mont, F16Generic,
-        "02", SmallF32MontM31, F32M31,
-        "03", SmallF32MontBabybear, F32Babybear,
-        "04", SmallF64MontGoldilock, F64Goldilocks
-        // "05", SmallF128Mont, F128,
+        "01", SmallF8MontM7, F8M7,
+        "02", SmallF16Mont, F16Generic,
+        "03", SmallF32MontM31, F32M31,
+        "04", SmallF32MontBabybear, F32Babybear,
+        "05", SmallF64MontGoldilock, F64Goldilocks,
+        "06", SmallF128Mont, F128Generic,
     );
 
     group.finish();
@@ -232,11 +184,9 @@ fn bench_sqrt_all(c: &mut criterion::Criterion) {
 criterion_group!(addition_benches, bench_addition);
 criterion_group!(multiplication_benches, bench_multiplication);
 criterion_group!(inverse_benches, bench_inverse);
-criterion_group!(sqrt_benches, bench_sqrt_all);
 
 criterion_main!(
-    // addition_benches,
+    addition_benches,
     multiplication_benches,
-    // inverse_benches,
-    // sqrt_benches,
+    inverse_benches,
 );
