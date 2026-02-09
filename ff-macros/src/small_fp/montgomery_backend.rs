@@ -185,56 +185,74 @@ fn generate_u128_mul(
     r_mask: u128,
     n_prime: u128,
 ) -> proc_macro2::TokenStream {
-    let modulus_lo = modulus & 0xFFFFFFFFFFFFFFFF;
-    let modulus_hi = modulus >> 64;
+    let modulus_lo = (modulus & 0xFFFFFFFFFFFFFFFF) as u64;
+    let modulus_hi = (modulus >> 64) as u64;
     let shift_back = 128 - k_bits;
 
     quote! {
         #[inline(always)]
         fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-            const MODULUS_LO: u128 = #modulus_lo;
-            const MODULUS_HI: u128 = #modulus_hi;
+            const MODULUS_U128: u128 = #modulus;
+            const MODULUS_LO: u64 = #modulus_lo;
+            const MODULUS_HI: u64 = #modulus_hi;
             const R_MASK: u128 = #r_mask;
             const N_PRIME: u128 = #n_prime;
+            const K_BITS: u32 = #k_bits;
+            const SHIFT_BACK: u32 = #shift_back;
 
-            // 256-bit result stored as lo, hi
-            // t = a * b
-            let a_lo = a.value & 0xFFFFFFFFFFFFFFFF;
-            let a_hi = a.value >> 64;
-            let b_lo = b.value & 0xFFFFFFFFFFFFFFFF;
-            let b_hi = b.value >> 64;
+            // Use widening multiplication which compiles to better code
+            // Extract 64-bit parts for better code generation
+            let a_lo = (a.value as u64);
+            let a_hi = ((a.value >> 64) as u64);
+            let b_lo = (b.value as u64);
+            let b_hi = ((b.value >> 64) as u64);
 
-            let lolo = a_lo * b_lo;
-            let lohi = a_lo * b_hi;
-            let hilo = a_hi * b_lo;
-            let hihi = a_hi * b_hi;
+            // Compute a * b using u64 widening muls
+            // This generates MUL instructions which are efficient
+            let lolo = (a_lo as u128) * (b_lo as u128);
+            let lohi = (a_lo as u128) * (b_hi as u128);
+            let hilo = (a_hi as u128) * (b_lo as u128);
+            let hihi = (a_hi as u128) * (b_hi as u128);
 
-            let (cross_sum, cross_carry) = lohi.overflowing_add(hilo);
-            let (t_lo, mid_carry) = lolo.overflowing_add(cross_sum << 64);
-            let t_hi = hihi + ((cross_sum >> 64) | ((cross_carry as u128) << 64)) + (mid_carry as u128);
+            // Combine into 256-bit result
+            let mid = lohi.wrapping_add(hilo);
+            let mid_carry = ((mid < lohi) as u128) << 64;
+            
+            let t_lo = lolo.wrapping_add(mid << 64);
+            let t_lo_carry = (t_lo < lolo) as u128;
+            let t_hi = hihi.wrapping_add(mid >> 64).wrapping_add(mid_carry).wrapping_add(t_lo_carry);
 
-            // m = t_lo * n_prime & r_mask
+            // m = (t_lo * n_prime) & r_mask
             let m = t_lo.wrapping_mul(N_PRIME) & R_MASK;
 
-            // mn = m * modulus
-            let m_lo = m & 0xFFFFFFFFFFFFFFFF;
-            let m_hi = m >> 64;
+            // mn = m * modulus using same technique
+            let m_lo = (m as u64);
+            let m_hi = ((m >> 64) as u64);
 
-            let lolo = m_lo * MODULUS_LO;
-            let lohi = m_lo * MODULUS_HI;
-            let hilo = m_hi * MODULUS_LO;
-            let hihi = m_hi * MODULUS_HI;
+            let lolo = (m_lo as u128) * (MODULUS_LO as u128);
+            let lohi = (m_lo as u128) * (MODULUS_HI as u128);
+            let hilo = (m_hi as u128) * (MODULUS_LO as u128);
+            let hihi = (m_hi as u128) * (MODULUS_HI as u128);
 
-            let (cross_sum, cross_carry) = lohi.overflowing_add(hilo);
-            let (mn_lo, mid_carry) = lolo.overflowing_add(cross_sum << 64);
-            let mn_hi = hihi + ((cross_sum >> 64) | ((cross_carry as u128) << 64)) + (mid_carry as u128);
+            let mid = lohi.wrapping_add(hilo);
+            let mid_carry = ((mid < lohi) as u128) << 64;
+            
+            let mn_lo = lolo.wrapping_add(mid << 64);
+            let mn_lo_carry = (mn_lo < lolo) as u128;
+            let mn_hi = hihi.wrapping_add(mid >> 64).wrapping_add(mid_carry).wrapping_add(mn_lo_carry);
 
             // (t + mn) / R
-            let (sum_lo, carry) = t_lo.overflowing_add(mn_lo);
-            let sum_hi = t_hi + mn_hi + (carry as u128);
+            let sum_lo = t_lo.wrapping_add(mn_lo);
+            let sum_lo_carry = (sum_lo < t_lo) as u128;
+            let sum_hi = t_hi.wrapping_add(mn_hi).wrapping_add(sum_lo_carry);
 
-            let mut u = (sum_lo >> #k_bits) | (sum_hi << #shift_back);
-            u -= #modulus * (u >= #modulus) as u128;
+            // Shift right by k_bits
+            let mut u = (sum_lo >> K_BITS) | (sum_hi << SHIFT_BACK);
+            
+            // Conditional subtraction - branchless version
+            let needs_sub = (u >= MODULUS_U128) as u128;
+            u = u.wrapping_sub(MODULUS_U128 & needs_sub.wrapping_neg());
+            
             a.value = u;
         }
     }
