@@ -9,6 +9,7 @@ pub(crate) fn backend_impl(
     modulus: u128,
     generator: u128,
 ) -> proc_macro2::TokenStream {
+    const M31_MODULUS: u128 = (1u128 << 31) - 1;
     let k_bits = 128 - modulus.leading_zeros();
     let r: u128 = 1u128 << k_bits;
     let r_mod_n = r % modulus;
@@ -27,16 +28,15 @@ pub(crate) fn backend_impl(
     let (from_bigint_impl, into_bigint_impl) =
         generate_montgomery_bigint_casts(modulus, k_bits, r_mod_n);
     let sqrt_precomp_impl = generate_sqrt_precomputation(modulus, two_adicity);
-    let mul_assign_impl = if modulus == ((1u128 << 31) - 1) {
+    let mul_assign_impl = if modulus == M31_MODULUS {
         quote! {
             let prod = (a.value as u64).wrapping_mul(b.value as u64);
-            const MASK31: u64 = (1u64 << 31) - 1;
-            const MODULUS31: u64 = (1u64 << 31) - 1;
+            const M31_MASK: u64 = (1u64 << 31) - 1;
 
-            let mut reduced = (prod & MASK31) + (prod >> 31);
-            reduced = (reduced & MASK31) + (reduced >> 31);
-            if reduced >= MODULUS31 {
-                reduced -= MODULUS31;
+            let mut reduced = (prod & M31_MASK) + (prod >> 31);
+            reduced = (reduced & M31_MASK) + (reduced >> 31);
+            if reduced >= M31_MASK {
+                reduced -= M31_MASK;
             }
             a.value = reduced as Self::T;
         }
