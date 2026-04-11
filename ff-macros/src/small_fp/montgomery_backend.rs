@@ -27,6 +27,69 @@ pub(crate) fn backend_impl(
     let (from_bigint_impl, into_bigint_impl) =
         generate_montgomery_bigint_casts(modulus, k_bits, r_mod_n);
     let sqrt_precomp_impl = generate_sqrt_precomputation(modulus, two_adicity);
+    let mul_assign_impl = if modulus == ((1u128 << 31) - 1) {
+        quote! {
+            let prod = (a.value as u64).wrapping_mul(b.value as u64);
+            const MASK31: u64 = (1u64 << 31) - 1;
+            const MODULUS31: u64 = (1u64 << 31) - 1;
+
+            let mut reduced = (prod & MASK31) + (prod >> 31);
+            reduced = (reduced & MASK31) + (reduced >> 31);
+            if reduced >= MODULUS31 {
+                reduced -= MODULUS31;
+            }
+            a.value = reduced as Self::T;
+        }
+    } else if k_bits <= 63 {
+        quote! {
+            let t = (a.value as u128).wrapping_mul(b.value as u128);
+            let m = t.wrapping_mul(#n_prime) & #r_mask;
+            let mut u = (t.wrapping_add(m.wrapping_mul(#modulus))) >> #k_bits;
+            if u >= #modulus {
+                u -= #modulus;
+            }
+            a.value = u as Self::T;
+        }
+    } else if k_bits == 64 {
+        let n_prime_u64 = n_prime as u64;
+        quote! {
+            let t = (a.value as u128).wrapping_mul(b.value as u128);
+            let t_lo = t as u64;
+            let t_hi = (t >> 64) as u64;
+
+            let m = t_lo.wrapping_mul(#n_prime_u64);
+            let mn = (m as u128).wrapping_mul(#modulus);
+            let mn_lo = mn as u64;
+            let mn_hi = (mn >> 64) as u64;
+
+            let carry = ((t_lo as u128) + (mn_lo as u128)) >> 64;
+            let mut u = (t_hi as u128) + (mn_hi as u128) + carry;
+            if u >= #modulus {
+                u -= #modulus;
+            }
+            a.value = u as Self::T;
+        }
+    } else {
+        quote! {
+            let a_u128 = a.value as u128;
+            let b_u128 = b.value as u128;
+
+            let t = a_u128.wrapping_mul(b_u128);
+            let m = t.wrapping_mul(#n_prime) & #r_mask;
+            let mn = m.wrapping_mul(#modulus);
+
+            let (t_plus_mn, overflow) = t.overflowing_add(mn);
+            let mut u = t_plus_mn >> #k_bits;
+            if overflow {
+                u += 1u128 << (128 - #k_bits);
+            }
+
+            if u >= #modulus {
+                u -= #modulus;
+            }
+            a.value = u as Self::T;
+        }
+    };
 
     quote! {
         type T = #ty;
@@ -68,24 +131,9 @@ pub(crate) fn backend_impl(
             }
         }
 
+        #[inline(always)]
         fn mul_assign(a: &mut SmallFp<Self>, b: &SmallFp<Self>) {
-            let a_u128 = a.value as u128;
-            let b_u128 = b.value as u128;
-
-            let t = a_u128.wrapping_mul(b_u128);
-            let m = t.wrapping_mul(#n_prime) & #r_mask;
-            let mn = m.wrapping_mul(#modulus);
-
-            let (t_plus_mn, overflow) = t.overflowing_add(mn);
-            let mut u = t_plus_mn >> #k_bits;
-            if overflow {
-                u += 1u128 << (128 - #k_bits);
-            }
-
-            if u >= #modulus {
-                u -= #modulus;
-            }
-            a.value = u as Self::T;
+            #mul_assign_impl
         }
 
         fn sum_of_products<const T: usize>(

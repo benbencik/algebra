@@ -36,6 +36,27 @@ pub type SmallF128 = SmallFp<SmallF128Config>;
 pub struct SmallF128ConfigMont;
 pub type SmallF128Mont = SmallFp<SmallF128ConfigMont>;
 
+#[derive(SmallFpConfig)]
+#[modulus = "2147483647"] // M31
+#[generator = "7"]
+#[backend = "montgomery"]
+pub struct M31ConfigMont;
+pub type M31Mont = SmallFp<M31ConfigMont>;
+
+#[derive(SmallFpConfig)]
+#[modulus = "2013265921"] // BabyBear: 2^31 - 2^27 + 1
+#[generator = "31"]
+#[backend = "montgomery"]
+pub struct BabyBearConfigMont;
+pub type BabyBearMont = SmallFp<BabyBearConfigMont>;
+
+#[derive(SmallFpConfig)]
+#[modulus = "2130706433"] // KoalaBear: 2^31 - 2^24 + 1
+#[generator = "3"]
+#[backend = "montgomery"]
+pub struct KoalaBearConfigMont;
+pub type KoalaBearMont = SmallFp<KoalaBearConfigMont>;
+
 #[derive(MontConfig)]
 #[modulus = "18446744069414584321"]
 #[generator = "2"]
@@ -190,6 +211,46 @@ fn naive_element_wise_mult_ark_small_field_128(c: &mut Criterion) {
     });
 }
 
+fn mul_m31_mont_scalar(c: &mut Criterion) {
+    let x = M31Mont::from(0x34167c58_u32);
+    let y = M31Mont::from(0x61f3207b_u32);
+    c.bench_function("mul_m31_mont_scalar", |b| {
+        b.iter(|| black_box(x) * black_box(y))
+    });
+}
+
+fn mul_babybear_mont_scalar(c: &mut Criterion) {
+    let x = BabyBearMont::from(0x34167c58_u32);
+    let y = BabyBearMont::from(0x61f3207b_u32);
+    c.bench_function("mul_babybear_mont_scalar", |b| {
+        b.iter(|| black_box(x) * black_box(y))
+    });
+}
+
+fn mul_koalabear_mont_scalar(c: &mut Criterion) {
+    let x = KoalaBearMont::from(0x34167c58_u32);
+    let y = KoalaBearMont::from(0x61f3207b_u32);
+    c.bench_function("mul_koalabear_mont_scalar", |b| {
+        b.iter(|| black_box(x) * black_box(y))
+    });
+}
+
+fn mul_goldilocks_mont_scalar(c: &mut Criterion) {
+    let x = SmallF64Mont::from(0x1234_5678_9abc_def0_u64);
+    let y = SmallF64Mont::from(0x0fed_cba9_8765_4321_u64);
+    c.bench_function("mul_goldilocks_mont_scalar", |b| {
+        b.iter(|| black_box(x) * black_box(y))
+    });
+}
+
+fn mul_goldilocks_p3_scalar(c: &mut Criterion) {
+    let x = P3Goldilocks::from_canonical_u64(0x1234_5678_9abc_def0_u64);
+    let y = P3Goldilocks::from_canonical_u64(0x0fed_cba9_8765_4321_u64);
+    c.bench_function("mul_goldilocks_p3_scalar", |b| {
+        b.iter(|| black_box(x) * black_box(y))
+    });
+}
+
 criterion_group!(
     benches,
     naive_element_wise_mult_ark_bigint_64,
@@ -198,5 +259,10 @@ criterion_group!(
     naive_element_wise_mult_p3_64,
     naive_element_wise_mult_ark_bigint_128,
     naive_element_wise_mult_ark_small_field_128,
+    mul_m31_mont_scalar,
+    mul_babybear_mont_scalar,
+    mul_koalabear_mont_scalar,
+    mul_goldilocks_mont_scalar,
+    mul_goldilocks_p3_scalar,
 );
 criterion_main!(benches);
