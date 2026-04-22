@@ -17,7 +17,7 @@ define_field!(
     name = SmallFp32Babybear,
 );
 
-// Koalabear prime 2^31 - 2^24 + 1
+// KoalaBear prime 2^31 - 2^24 + 1
 define_field!(
     modulus = "2130706433",
     generator = "3",

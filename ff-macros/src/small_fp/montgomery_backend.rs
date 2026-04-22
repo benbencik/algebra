@@ -221,7 +221,9 @@ fn generate_u64_mul(
     n_prime: u128,
 ) -> proc_macro2::TokenStream {
     const GOLDILOCKS_PRIME: u128 = 18446744069414584321; // 2^64 - 2^32 + 1
-                                                         // Use u128 for multiplication to avoid overflow when multiplying u64 values
+    debug_assert!(n_prime <= u64::MAX as u128);
+    debug_assert!(r_mask <= u64::MAX as u128);
+    // Use u128 for multiplication to avoid overflow when multiplying u64 values
     let shift_bits = 128 - k_bits;
 
     if modulus == GOLDILOCKS_PRIME {
@@ -233,7 +235,7 @@ fn generate_u64_mul(
                 const NEG_ORDER: u64 = P.wrapping_neg();
 
                 #[cfg(target_arch = "x86_64")]
-                let (prod_lo, prod_hi) = {
+                let prod = {
                     let lo: u64;
                     let hi: u64;
                     unsafe {
@@ -245,16 +247,13 @@ fn generate_u64_mul(
                             options(pure, nomem, nostack)
                         );
                     }
-                    (lo, hi)
+                    ((hi as u128) << 64) | (lo as u128)
                 };
 
                 #[cfg(not(target_arch = "x86_64"))]
-                let (prod_lo, prod_hi) = {
-                    let prod = (a.value as u128) * (b.value as u128);
-                    (prod as u64, (prod >> 64) as u64)
-                };
+                let prod = (a.value as u128) * (b.value as u128);
 
-                let prod = ((prod_hi as u128) << 64) | (prod_lo as u128);
+                let prod_lo = prod as u64;
                 let m = prod_lo.wrapping_mul(N_PRIME);
                 let m128 = m as u128;
                 let mp = (m128 << 64).wrapping_sub(m128 << 32).wrapping_add(m128);
